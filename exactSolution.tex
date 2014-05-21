@@ -1,0 +1,127 @@
+\documentclass[12pt]{article}
+%\input {macros}
+%\graphicspath{{figures/}}
+
+%\setlength{\textwidth}{6.5in}
+%\setlength{\textheight}{8.55in}
+%\setlength{\topmargin}{0in}
+%\setlength{\oddsidemargin}{0in}
+%\setlength{\evensidemargin}{0in}
+
+\usepackage{amsmath}
+
+
+\newcommand{\CS}{c_{\text s}}
+\newcommand{\CD}{c_{\text d}}   %RBH
+
+\begin{document}
+
+\title{Trigonometric Exact Solutions for Linearized Elastodynamics}
+\author{Reza~Abedi}
+\date{\today}%{May 16, 2008}
+\maketitle
+
+%\newcommand{\sin}{\mathrm{sin}}
+%\newcommand{\cos}{\mathrm{cos}}
+
+%\tableofcontents
+
+%\section{}
+
+The exact solutions for linearized elastodynamics take the form:
+
+\begin{equation}
+u_0 = A_0 \sin (m_0 x_0) \sin (\alpha t),
+\end{equation}
+
+\begin{subequations}
+\begin{align}
+u_0 &= A_0 \sin (m_0 x_0) \sin (m_1 x_1) \sin (\alpha t), \\
+u_1 &= A_1 \cos (m_0 x_0) \cos (m_1 x_1) \sin (\alpha t), 
+\end{align}
+\end{subequations}
+
+\begin{subequations}
+\begin{align}
+u_0 &= A_0 \sin (m_0 x_0) \sin (m_1 x_1) \sin (m_2 x_2) \sin (\alpha t), \\
+u_1 &= A_1 \cos (m_0 x_0) \cos (m_1 x_1) \sin (m_2 x_2) \sin (\alpha t), \\
+u_2 &= A_2 \cos (m_0 x_0) \sin (m_1 x_1) \cos (m_2 x_2) \sin (\alpha t), 
+\end{align}
+\end{subequations}
+%
+for $d = 1, 2, 3$, respectively. Let $f_i$ and $L_i$ be the frequencies and domain length in direction $i \in \{1, 2, 3\}$. The values $m_i$ are obtained,
+%
+\begin{equation}
+m_i = \frac{2 \pi f_i}{L_i}
+\end{equation}
+% 
+The eigen solutions, solutions with zero body force that satisfy the equations of motion, represent either a dilatational wave or a shear wave. The relation between $A_i$ are as follow:
+%
+\begin{equation}
+A_0 \neq 0
+\end{equation}
+
+
+\begin{subequations}
+\begin{align}
+A_0 &= f_0, &A_1 &= -f_1,  \quad &\text{dilatational wave} \\
+A_0 &= f_1, &A_1 &= f_0,  \quad &\text{shear wave}
+\end{align}
+\end{subequations}
+
+\begin{subequations}
+\begin{align}
+A_0 &= f_0, &A_1 &= -f_1,  &A_2 &= -f_2,  \quad &\text{dilatational wave} \\
+A_0 &= f_1, &A_1 &= f_0,  &A_2 &= 0,  \quad &\text{shear wave (option 1)} \\
+A_0 &= f_2, &A_1 &= 0,  &A_2 &= f_0,  \quad &\text{shear wave (option 2)} \\
+A_0 &= f_0 f_2, &A_1 &= -f_1 f_2,  &A_2 &= f_0^2 + f_1^2,  \quad &\text{shear wave (option 3)}
+\end{align}
+\end{subequations}
+%
+for $d = 1, 2, 3$, respectively. The temporal coefficient $\alpha$ satisfies,
+%
+\begin{equation}
+\alpha = \sqrt{\Sigma_{i=0}^d m_i^2} c
+\end{equation}
+%
+where $c = \CD$ for dilatational wave and $c = \CS$ for shear wave, respectively.
+
+I am doing studies for only the dilatational wave for all dimensions. Thus the wave speed is given by (I use plane-strain model for $d = 2$),
+%
+\begin{equation}
+\CD = \begin{cases} 
+1 & d = 1 \\
+\sqrt{ \frac{ 1 - \nu} {(1 + \nu)  (1 - 2  \nu) } \frac{E}{\rho}} & d = 2,3
+\end{cases}
+\end{equation}
+%
+For the material properties I use ($E = \rho = 1, \nu = 0.3$), the wave speed is 1 and $\approx 1.16$ for $d = 1$ and $ d > 1$, respectively. In addition I use $L_i = 1$ for all dimensions. To ensure a full cycle in time the final time, T, would is equal to $2 \pi / \alpha$.  Based on the form of the eigen solutions for longitudinal wave we get  $\alpha = 2 \pi \sqrt{d} c $ which yields $T = \frac{1} {\sqrt d c}$. 
+
+The errors I propose to use are:
+
+\begin{itemize}
+\item Dissipation: It is our familiar integral of energy flux on the boundaries of the domain. 
+\item $L^2$ and energy errors of the solution with respect to the exact solution. The energy errors are the integrals of internal and kinetic energy corresponding to the error in the displacement field.
+\end{itemize}
+
+
+
+Special care should be given to integrals on boundaries that correspond to initial and boundary conditions. For initial condition strain energy is zero and kinetic energy is given by,
+\begin{equation}
+K = \frac12 \int_{[0 \ 1]^d} \rho |v|^2 \mathrm{d} A = \frac{\alpha^2 d}{2^{(d + 1)}} = \frac{(\pi  c d)^2}{2^{(d-1)}} 
+\end{equation}
+%
+Computing the energy flux integral on the boundary of the domain is more tricky. First, some fluxes are prescribed and their energy adjoint quantities are obtained from the interior trace that in turn is computed from the discrete solution. In all my examples I have solved Dirichlet boundary condition (all velocities are determined based on the exact solutions given above). Accordingly, stress is obtained from FEM solution. Second, special care should be given to integration of the energy flux. In my setting, target velocity is a trigonometric function while stress is a polynomial of order $p - 1$ ($p$ being the order of displacement interpolants). Regardless of the order of Gauss quadrature, there would be some error in computing these integrals in such boundaries. The final boundary of the domain that we should consider is the causal outflow boundary. As all target values are obtained from discrete solution, a quadrature order of $2 (p - 1)$ ensures exact evaluation of energy flux.
+
+
+
+The function \underline{void SLSubConfig::setSpecifiedLoadFlags()} can be used in the evaluation of equations 4 to 8 and the function 
+ \underline{bool SLPhysics::computeExactSolutionIndividualPhysicsLevelUVEB} is used to compute the displacement field (equations 1 to 3) and the corresponding velocity, strain, linear momentum density, and stress fields.
+
+%\bibliographystyle{unsrt} 
+%\bibliography{bib_database_ed_cohesive}
+
+\end{document}
+
+
+
