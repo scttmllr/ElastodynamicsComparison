@@ -16,17 +16,76 @@
 
 \begin{document}
 
-\title{Trigonometric Exact Solutions for Linearized Elastodynamics}
-\author{Reza~Abedi}
+\title{Comparison of Finite Element Methods for Linearized Elastodynamics}
+\author{Reza~Abedi, Scott T. Miller}
 \date{\today}%{May 16, 2008}
 \maketitle
 
-%\newcommand{\sin}{\mathrm{sin}}
-%\newcommand{\cos}{\mathrm{cos}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Abstract
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section*{Abstract}
+We are providing the first quantitative comparison of numerical
+methods for elastodynamics, also referred to as \emph{structural dynamics}.
+We shall only compare finite element methods.  
 
-%\tableofcontents
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Introduction
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Introduction}
 
-%\section{}
+What are the popular/industry standard methods for solid mechanics
+and structural dynamics applications?  How can we provide guidance
+to the novice user or entry-level engineer on which methods to 
+choose?
+
+TODO:  Reza and Philip
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Finite elements
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Finite element formulations}
+
+\begin{enumerate}
+\item Spacetime methods
+\begin{enumerate}
+\item SDG with causal meshing -- Reza and Philip
+\item SDG with timeslabs (later)
+\item Time-discontinuous (later)
+\end{enumerate}
+\item Method of lines:  discretize space first
+\begin{enumerate}
+\item Continuous Galerkin (1-field \& 2-field) -- Scott
+\item Discontinuous Galerkin (multifield formulations) -- Scott
+\item Lumped versus consistent mass matrix -- Scott
+\item Temporal discretization
+\begin{enumerate}
+\item Explicit Runge-Kutta methods, traditional and SSP -- Scott
+\item Implicit RK methods
+\item Implicit-explicit RK (IMEX) methods
+\item Newmark family of integrators (implicit)
+\item Bathe integrator (implicit)
+\item Backward difference formulae (implicit)
+\item Others?
+\end{enumerate}
+\end{enumerate}
+\end{enumerate}
+
+To be specific, we need to give the full finite element formulations,
+as well as quadrature schemes/rules used.  Polynomial orders, etc.
+Optimal convergence rates.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Exact solutions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Exact solutions}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Infinitely smooth
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{$C^\infty(\Omega)$ solution}
 
 The exact solutions for linearized elastodynamics take the form:
 
@@ -117,6 +176,11 @@ Computing the energy flux integral on the boundary of the domain is more tricky.
 
 The function \underline{void SLSubConfig::setSpecifiedLoadFlags()} can be used in the evaluation of equations 4 to 8 and the function 
  \underline{bool SLPhysics::computeExactSolutionIndividualPhysicsLevelUVEB} is used to compute the displacement field (equations 1 to 3) and the corresponding velocity, strain, linear momentum density, and stress fields.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Continuous/weak shocks
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{$C^0(\Omega)$ solution with weak shocks}
 
 %\bibliographystyle{unsrt} 
 %\bibliography{bib_database_ed_cohesive}
