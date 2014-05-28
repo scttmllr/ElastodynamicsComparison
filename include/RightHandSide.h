@@ -35,7 +35,7 @@ void RightHandSide<dim>::vector_value (const Point<dim> &p,
 	values = 0.00;
 	
 	if(dim==2)
-		values(1) = -0.002; // gravity
+		values(1) = -9.81; // gravity, y-axis
 	
 }//RHS::vector_value
 
