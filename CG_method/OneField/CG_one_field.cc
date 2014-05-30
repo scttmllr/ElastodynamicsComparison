@@ -79,10 +79,9 @@ private:
 	
 	FESystem<dim>        fe;
 	
-	//dealii::Vector<double> coefficients;
-	//ConstraintMatrix     hanging_node_constraints;
+	ConstraintMatrix     constraints;
 	
-	CompressedSparsityPattern      sparsity_pattern;
+	SparsityPattern      sparsity_pattern;
 	
 	SparseMatrix<double> system_matrix;
 	SparseMatrix<double> consistent_mass_matrix;
@@ -96,16 +95,18 @@ private:
     
     // Vectors for the RHS of the linear system,
     // as well as solutions
-    Vector<double> rhs;
-    Vector<double> solution, old_solution, mid_solution;
+    Vector<double> system_rhs;
+    Vector<double> solution, old_solution, old_velocity;
+    
+        // Temp vector for doing linear combinations of Vectors
+    Vector<double> linear_combo;
 	
 	// Also, keep track of the current time and the time spent evaluating
     // certain functions
-    Time                             time;
-    TimerOutput                      timer_output;
+//    TimerOutput                      timer_output;
     
     // Info for time stepping:
-    double current_time, final_time, dt;
+    double current_time;
     unsigned int n_timesteps;
 	
 	// Use Q1 mapping (straight edges) for everything.
@@ -139,8 +140,8 @@ void ElasticProblem<dim>::setup_system ()
     //DoFTools::make_hanging_node_constraints (dof_handler, constraints);
     
     // Set Dirichlet BCs on all boundaries
-	VectorTools::interpolate_boundary_values (MappingQ1<dim>(),
-											dof_handler,
+	VectorTools::interpolate_boundary_values (dof_handler,
+                                              0,
 											ExactSolution<dim>(dim, current_time),
 											constraints);
     
@@ -152,12 +153,15 @@ void ElasticProblem<dim>::setup_system ()
 	
 	
 	system_matrix.reinit (sparsity_pattern);
+    consistent_mass_matrix.reinit (sparsity_pattern);
+    stiffness_matrix.reinit (sparsity_pattern);
     
-    rhs.reinit(dof_handler.n_dofs());
+    system_rhs.reinit(dof_handler.n_dofs());
     
     solution.reinit(dof_handler.n_dofs());
     old_solution.reinit(dof_handler.n_dofs());
-    mid_solution.reinit(dof_handler.n_dofs());
+    old_velocity.reinit(dof_handler.n_dofs());
+    linear_combo.reinit(dof_handler.n_dofs());
 }//setup_system
 
 
@@ -165,39 +169,47 @@ template <int dim>
 void ElasticProblem<dim>::assemble_implicit_system ()
 {
     // Zero matrices and vectors
-    system_matrix = 0.;
     consistent_mass_matrix = 0.;
     stiffness_matrix = 0.;
-    inverse_system_matrix = 0.;
-
-    rhs = 0.;
+    system_rhs = 0.;
+    
+        // Create an identity tensor:
+    Tensor<2,dim> Id;
+	Id = 0.0;
+	for(int d=0; d<dim; ++d)
+		Id[d][d] = 1;
 
     QGauss<dim>  quadrature_formula(std::ceil(((2.0*fe.degree) +1)/2));
 
     FEValues<dim> fe_values (fe, quadrature_formula,
-                         update_values   | 
-                         update_quadrature_points | 
-                         update_JxW_values);
+                            update_values   |
+                            update_gradients |
+                            update_quadrature_points | 
+                            update_JxW_values);
 
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     const unsigned int   n_q_points    = quadrature_formula.size();
 
-    FullMatrix<double>   cell_matrix (dofs_per_cell, dofs_per_cell);
+    FullMatrix<double>   cell_mass (dofs_per_cell, dofs_per_cell);
+    FullMatrix<double>   cell_stiffness (dofs_per_cell, dofs_per_cell);
 
     std::vector<unsigned int> local_dof_indices (dofs_per_cell);
 
     // Now we can begin with the loop
     // over all cells:
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
-    endc = dof_handler.end();
+                                                            endc = dof_handler.end();
 
-    double rho, lambda, mu;
+    double l=lambda(dim);
+    double m=mu(dim);
+    
+    double trE;
+    Tensor<2,dim> w_j, E, Stress;
 
     for (; cell!=endc; ++cell)
  	{
- 		cell_matrix = 0;
- 		
- 		get_material_paras(cell->material_id(), rho, lambda, mu);
+ 		cell_mass = 0;
+        cell_stiffness = 0;
  		
  		fe_values.reinit (cell);
  		
@@ -207,58 +219,40 @@ void ElasticProblem<dim>::assemble_implicit_system ()
  			{
  				for (unsigned int j=0; j<dofs_per_cell; ++j)
  				{
- 					cell_matrix(i,j) += fe_values[disp].value(i,q_point) * 
- 					fe_values[disp].value(j,q_point) *
- 					fe_values.JxW(q_point);
+                        // Compute the stress from the shape function:
+                        // Linearized strain tensor:
+                    E = 0.5 * (fe_values[disp].gradient(j,q_point)
+                               + transpose(fe_values[disp].gradient(j,q_point) ) );
+                    
+                    trE = 0.0;
+                    for(int d=0; d<dim; ++d)
+                        trE += E[d][d];
+
+                    Stress = Id;
+                    Stress *= (l*trE);
+                    Stress += (2.0*m)*E;
+                    
+                        // Assemble the local matrices
+ 					cell_mass(i,j) += rho * fe_values[disp].value(i,q_point) *
+                                    fe_values[disp].value(j,q_point) *
+                                    fe_values.JxW(q_point);
  					
- 					cell_matrix(i,j) += rho * fe_values[vel].value(i,q_point) * 
- 					fe_values[vel].value(j,q_point) *
- 					fe_values.JxW(q_point);
+ 					cell_stiffness(i,j) += scalar_product(fe_values[disp].gradient(i,q_point),
+                                    Stress) * fe_values.JxW(q_point);
  				}//j
  			}//i
  		}//q_point
  		
- 		cell->get_dof_indices (local_dof_indices);
- 		for (unsigned int i=0; i<dofs_per_cell; ++i)
- 		{
- 			for (unsigned int j=0; j<dofs_per_cell; ++j)
- 				mass_matrix.add (local_dof_indices[i],
- 								 local_dof_indices[j],
- 								 cell_matrix(i,j));
- 		}//i
+    cell->get_dof_indices (local_dof_indices);
+
+       // Assemble the local matrices into the global system:
+    constraints.distribute_local_to_global(cell_mass, local_dof_indices, consistent_mass_matrix);
+
+    constraints.distribute_local_to_global(cell_mass, local_dof_indices, stiffness_matrix);
  		
  	}//cell
- 	
- 	Vector<double> ones;
- 	ones.reinit(coefficients.size());
- 	coefficients = 0.;
- 	ones = 1.;
- 	
- 	// Need an exact solution function!
- 		//boundary_values.clear();
- 	VectorTools::interpolate_boundary_values (dof_handler,
- 											  0,
- 											  ExactSolution<dim>(2*dim, td.current_time()),
- 											  boundary_values);
- 	MatrixTools::apply_boundary_values (boundary_values,
- 										mass_matrix,
- 										coefficients,
- 										ones, 
- 										false);
- 	
- 	directSolver.initialize (mass_matrix);
+
  }//assemble_mass_matrix
-
-
-template <int dim>
-void ElasticProblem<dim>::solve (Vector<double> &soln, Vector<double> &rhs)
-{
-    SparseDirectUMFPACK directSolver;
-	directSolver.initialize (system_matrix);
-	directSolver.vmult (solution, rhs);
-
-    constraints.distribute (solution);
-}//solve
 
 template <int dim>
 void ElasticProblem<dim>::output_results (const unsigned int cycle, std::string time_integrator) const
@@ -276,14 +270,13 @@ void ElasticProblem<dim>::output_results (const unsigned int cycle, std::string 
 	
 	DataOut<dim> data_out;
 	data_out.attach_dof_handler (dof_handler);
-
 	
 	std::vector<std::string> solution_names(dim, "displacement");
 	
 	std::vector<DataComponentInterpretation::DataComponentInterpretation>
 	interpretation (dim, DataComponentInterpretation::component_is_part_of_vector);
-	
-	data_out.add_data_vector (time, solution_names,
+
+	data_out.add_data_vector (solution, solution_names,
 							DataOut<dim,DoFHandler<dim> >::type_automatic, 
 							interpretation);
 	
@@ -352,34 +345,34 @@ void ElasticProblem<dim>::create_grid (int nx, int ny, int nz)
 template <int dim>
 void ElasticProblem<dim>::compute_errors(void)
 {
-	Vector<double> local_errors (triangulation.n_active_cells());
-	
-	for(int i=0; i<2*dim; ++i){
-	
-	ComponentSelectFunction<dim> mask(i, 2*dim);
-		
-	local_errors = 0.0;
-	VectorTools::integrate_difference(dof_handler, 
-									td.access_current_solution(),
-									ExactSolution<dim>(2*dim, td.current_time()),
-									local_errors,
-									QGauss<dim>(fe.degree+2),
-									VectorTools::L2_norm,
-									&mask);
-	
-	L2_error[i] = local_errors.l2_norm();
-	
-	local_errors = 0.0;
-	VectorTools::integrate_difference(dof_handler, 
-									td.access_current_solution(),
-									ExactSolution<dim>(2*dim, td.current_time()),
-									local_errors,
-									QGauss<dim>(fe.degree+2),
-									VectorTools::L1_norm,
-									&mask);
-	
-	L1_error[i] = local_errors.l1_norm();
-	}
+//	Vector<double> local_errors (triangulation.n_active_cells());
+//	
+//	for(int i=0; i<2*dim; ++i){
+//	
+//	ComponentSelectFunction<dim> mask(i, 2*dim);
+//		
+//	local_errors = 0.0;
+//	VectorTools::integrate_difference(dof_handler, 
+//									td.access_current_solution(),
+//									ExactSolution<dim>(2*dim, td.current_time()),
+//									local_errors,
+//									QGauss<dim>(fe.degree+2),
+//									VectorTools::L2_norm,
+//									&mask);
+//	
+//	L2_error[i] = local_errors.l2_norm();
+//	
+//	local_errors = 0.0;
+//	VectorTools::integrate_difference(dof_handler, 
+//									td.access_current_solution(),
+//									ExactSolution<dim>(2*dim, td.current_time()),
+//									local_errors,
+//									QGauss<dim>(fe.degree+2),
+//									VectorTools::L1_norm,
+//									&mask);
+//	
+//	L1_error[i] = local_errors.l1_norm();
+//	}
 	
 }//compute_errors
 
@@ -389,77 +382,73 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
 	create_grid(nx, ny, nz);
 	
 	std::cout << "   Number of active cells:       "
-	<< triangulation.n_active_cells()
-	<< std::endl;
+            << triangulation.n_active_cells()
+            << std::endl;
 	
 	setup_system ();
 	
 	std::cout << "   Number of degrees of freedom: "
-	<< dof_handler.n_dofs()
-	<< std::endl;
-	
-		// Project IC's here.  All zero for our problem.
-// 	if(dim==2)         
-// 	{
-// 		old_solution = 0.0;     
-// 	}
-// 	else
-// 	{
-// 		FunctionParser<dim> initial_conditions(2*dim);
-// 		std::vector<std::string> expressions (2*dim, "0.0");
-// 		expressions[dim] = "1.0"; // set velocity in x-direction
-// 		
-// 		initial_conditions.initialize (FunctionParser<dim>::default_variable_names(),
-// 									   expressions,
-// 									   std::map<std::string, double>());
-// 		
-// 		VectorTools::interpolate(dof_handler, initial_conditions, old_solution);
-// 	}
-	
-// Time discretization runs it:
-		
-	td.set_time_scheme(time_integrator);
-	td.reinit(dof_handler.n_dofs(), 0.0);
-	
-	VectorTools::interpolate(dof_handler, 
-				ExactSolution<dim>(2*dim, td.current_time()),
-				td.access_current_solution());
-				
-	if(time_integrator == "Bathe"){
-		VectorTools::interpolate(dof_handler, 
-				ExactSolutionTimeDerivative<dim>(2*dim, td.current_time()),
-				td.access_solution_derivative());
-	}
+            << dof_handler.n_dofs()
+            << std::endl;
+    
+        // Set time stepping parameters:
 				
 	//output_results(0, time_integrator);
 	
-    double final_time = dim == 1 ? 1.0 : 0.5;//0.609449;
+    double final_time = dim == 1 ? 1.0 : 0.5;
     
-    //final_time = 0.125;
-    // should base this on cfl?
-	double delta_t = 0.001;//
-	//0.000005;//0.01*(1./double(nx));
-	
-	if(time_integrator=="Bathe")
-		delta_t = 0.0001;
-	else
-		delta_t = 1.e-5;
-
-	td.set_final_time(final_time);
-	td.set_delta_t(delta_t);
-	
-	while (!td.finalized() )
+        // Mesh size:
+    double h = 1./double(nx);
+    
+        // For a CFL of 0.5:
+    double cfl = 0.50;
+    double delta_t = cfl*h/cd(dim);
+    double inv_dt = 1./delta_t;
+    unsigned int n_timesteps = final_time / delta_t;
+    
+    std::cout << "\n Wave speed:      cd = " << cd(dim);
+    std::cout << "\n Mesh size:       h  = " << h;
+    std::cout << "\n Time step size:  dt = " << delta_t;
+    std::cout << "\n Number of steps: N  = " << n_timesteps;
+    
+        // Now actually do the work:
+    current_time = 0.;
+    
+        // Set Initial Conditions
+	VectorTools::interpolate(dof_handler,
+                             ExactSolution<dim>(dim, current_time),
+                             solution);
+    
+    VectorTools::interpolate(dof_handler,
+                             ExactSolutionTimeDerivative<dim>(dim, current_time),
+                             old_velocity);
+    
+    for(unsigned int step=0; step<n_timesteps; ++step)
     {
-//    std::cout<<"\nBefore advance"<<std::endl;
-		td.advance();
-		
-        //if(td.time_step_num() % 1000 == 0)
-        //    output_results (td.time_step_num());
-		
-		//std::cout<<"\nl2 norm of solution = "<<td.access_current_solution().l2_norm()<<std::endl;
-	}//while
+        current_time += delta_t;
+        
+        assemble_implicit_system();
+        
+        system_rhs = 0.0;
+        linear_combo = old_solution;
+        linear_combo *= inv_dt;
+        linear_combo += old_velocity;
+        
+        consistent_mass_matrix.vmult(system_rhs, linear_combo);
+        system_rhs *= inv_dt;
+        
+        system_matrix = 0.;
+        system_matrix.add(delta_t,consistent_mass_matrix);
+        system_matrix.add(1.0,stiffness_matrix);
+        
+        SparseDirectUMFPACK directSolver;
+        directSolver.initialize (system_matrix);
+        directSolver.vmult (solution, system_rhs);
+        
+        constraints.distribute (solution);
+    }
 	
-	output_results (td.time_step_num(), time_integrator);
+	output_results (n_timesteps, time_integrator);
 	
 }
     
@@ -472,72 +461,71 @@ int main ()
 {
     try
     {
-     int np=3, nh=8, nt=3;
+    int np=5, nh=8;
+
+    int nx[8] = {1, 2, 4, 8, 16, 32, 64, 128};
+            //int p[5] = {1, 2, 5};
+    int p[5] = {1, 2, 3, 4, 5};
+
+    std::string snx[8] = {"1", "2", "4", "8", "16", "32", "64", "128"};
+        //std::string sp[5] = {"1", "2", "5"};
+    std::string sp[5] = {"1", "2", "3", "4", "5"};
+        
+    std::string time_integrator = "BackwardEuler";
+        
+    dealii::Timer timer;
      
-     int nx[8] = {1, 2, 4, 8, 16, 32, 64, 128};
-     int p[5] = {1, 2, 5};
-     //int p[5] = {1, 2, 3, 4, 5};
-     
-     std::string snx[8] = {"1", "2", "4", "8", "16", "32", "64", "128"};
-     std::string sp[5] = {"1", "2", "5"};
-     //std::string sp[5] = {"1", "2", "3", "4", "5"};
-     
-     std::vector<std::string> timeint(3);
-     timeint[0] = "RK1";
-     timeint[1] = "SSP_5_4";
-     timeint[2] = "Bathe";
-     
-// 	for(int j=0; j<np; ++j)     
-// 		for(int k=0; k<nh; ++k)
-//    			for(int i=0; i<nt; ++i)
-//         {
-// 	  	timer.start();
-//         ContinuousGalerkin::ElasticProblem<1> ed_problem(p[j]);
-//         ed_problem.run (timeint[i], nx[k]);
-//         timer.stop();
-//         ed_problem.compute_errors();
-//         std::cout << "\nElapsed CPU time: " << timer() << " seconds.";
-// 		std::cout << "Elapsed wall time: " << timer.wall_time() << " seconds.\n";
-// 		
-// 		std::string fileName = "./output_d1/" + timeint[i] + "_p" + sp[j] + "_h" + snx[k] + ".dat";
-// 		std::fstream fp;
-// 		fp.open(fileName.c_str(), std::ios::out);
-// 		fp.precision(16);
-// 		fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
-// 		for(int i=0; i<2; ++i)
-// 			fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
-// 		for(int i=0; i<2; ++i)
-// 			fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
-// 		fp.close();
-// 		
-// 		timer.reset();
-// 		}
-		
-	for(int j=0; j<np; ++j)     
-		for(int k=0; k<nh; ++k)
-   			for(int i=0; i<nt; ++i)
+ 	for(int j=0; j<np; ++j)     
+        for(int k=0; k<nh; ++k)
         {
-	  	timer.start();
-        ContinuousGalerkin::ElasticProblem<2> ed_problem(p[j]);
-        ed_problem.run (timeint[i], nx[k], nx[k]);
-        timer.stop();
-        ed_problem.compute_errors();
-        std::cout << "\nElapsed CPU time: " << timer() << " seconds.";
-		std::cout << "Elapsed wall time: " << timer.wall_time() << " seconds.\n";
+            timer.start();
+            ContinuousGalerkin::ElasticProblem<1> ed_problem(p[j], false);
+            ed_problem.run (time_integrator, nx[k]);
+            timer.stop();
+            ed_problem.compute_errors();
+            std::cout << "\nElapsed CPU time: " << timer() << " seconds.";
+            std::cout << "Elapsed wall time: " << timer.wall_time() << " seconds.\n";
+
+            std::string fileName = "./output_d1/" + time_integrator + "_p" + sp[j] + "_h" + snx[k] + ".dat";
+            std::fstream fp;
+            fp.open(fileName.c_str(), std::ios::out);
+            fp.precision(16);
+            fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
+            for(int i=0; i<2; ++i)
+            fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
+            for(int i=0; i<2; ++i)
+            fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
+            fp.close();
+
+            timer.reset();
+        }
 		
-		std::string fileName = "./output_d2/" + timeint[i] + "_p" + sp[j] + "_h" + snx[k] + ".dat";
-		std::fstream fp;
-		fp.open(fileName.c_str(), std::ios::out);
-		fp.precision(16);
-		fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
-		for(int i=0; i<2; ++i)
-			fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
-		for(int i=0; i<2; ++i)
-			fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
-		fp.close();
-		
-		timer.reset();
-		}
+            // dim = 2
+//	for(int j=0; j<np; ++j)     
+//		for(int k=0; k<nh; ++k)
+//   			for(int i=0; i<nt; ++i)
+//        {
+//	  	timer.start();
+//        ContinuousGalerkin::ElasticProblem<2> ed_problem(p[j]);
+//        ed_problem.run (timeint[i], nx[k], nx[k]);
+//        timer.stop();
+//        ed_problem.compute_errors();
+//        std::cout << "\nElapsed CPU time: " << timer() << " seconds.";
+//		std::cout << "Elapsed wall time: " << timer.wall_time() << " seconds.\n";
+//		
+//		std::string fileName = "./output_d2/" + timeint[i] + "_p" + sp[j] + "_h" + snx[k] + ".dat";
+//		std::fstream fp;
+//		fp.open(fileName.c_str(), std::ios::out);
+//		fp.precision(16);
+//		fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
+//		for(int i=0; i<2; ++i)
+//			fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
+//		for(int i=0; i<2; ++i)
+//			fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
+//		fp.close();
+//		
+//		timer.reset();
+//		}
 
     }
     catch (std::exception &exc)

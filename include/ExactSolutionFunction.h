@@ -2,14 +2,6 @@
 // Global variables for ElasticProblem:
 double rho = 1.;
 
-double cd(int dim){if(dim==1) return 1;
-else {
-	double E = 1.0;
-	double nu = 0.3;
-return std::sqrt((E*(1.-nu))/(rho*(1.+nu)*(1.-2.*nu)));
-}
-}//cd
-
 double lambda(int dim)
 {
 	if (dim==1)
@@ -25,6 +17,18 @@ double mu(int dim)
 	
 	return 0.384615;
 }//lambda
+
+double cd(int dim){if(dim==1) return 1;
+else {
+	double E = 1.0;
+	double nu = 0.3;
+//return std::sqrt((E*(1.-nu))/(rho*(1.+nu)*(1.-2.*nu)));
+     double l = lambda(dim);
+     double m = mu(dim);
+
+    return std::sqrt( (l+2.*m)/rho );
+}
+}//cd
 
 double A_0=1.0;
 double A_1=-A_0;
@@ -60,6 +64,8 @@ double ExactSolution<1>::value (const Point<1> &p,
 
 	if (comp == 2) // strain
 		return m_0*A_0*std::cos(m_0*p(0))*std::sin(alpha1*t);
+		
+	return -1;
 }
 
 template < >
@@ -91,6 +97,8 @@ double ExactSolution<2>::value (const Point<2> &p,
 
 	if (comp == 5) // E_yy
 		return -1.*m_1*A_1*std::cos(m_0*p(0))*std::sin(m_1*p(1))*std::sin(alpha*t);
+		
+	return -1;
 }
 
 template < >
@@ -99,6 +107,8 @@ double ExactSolution<3>::value (const Point<3> &p,
 {
 	std::cout<<"\nExactSolution::value not implemented for d==3!"<<std::endl;
 	exit(1);
+		
+	return -1;
 }
 /**********
 TIME DERIVATIVE
@@ -127,6 +137,8 @@ double ExactSolutionTimeDerivative<1>::value (const Point<1> &p,
 
 	if (comp == 2) // strain
 		return alpha1*m_0*A_0*std::cos(m_0*p(0))*std::cos(alpha1*t);
+		
+	return -1;
 }
 
 template < >
@@ -156,6 +168,8 @@ double ExactSolutionTimeDerivative<2>::value (const Point<2> &p,
 
 	if (comp == 5) // E_yy
 		return -1.*alpha*m_1*A_1*std::cos(m_0*p(0))*std::sin(m_1*p(1))*std::cos(alpha*t);
+		
+	return -1;
 }
 
 template < >
@@ -164,4 +178,8 @@ double ExactSolutionTimeDerivative<3>::value (const Point<3> &p,
 {
 	std::cout<<"\nExactSolution::value not implemented for d==3!"<<std::endl;
 	exit(1);
+		
+	return -1;
 }
+
+//Instantiate the ExactSolutionClass?
