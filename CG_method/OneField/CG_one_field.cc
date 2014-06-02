@@ -2,6 +2,7 @@
 #include <deal.II/base/function.h>
 #include <deal.II/base/logstream.h>
 #include <deal.II/base/timer.h>
+#include <deal.II/base/convergence_table.h>
 
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/full_matrix.h>
@@ -56,12 +57,18 @@ template <int dim>
 class ElasticProblem
 {
 public:
-	ElasticProblem (const int poly_order, const bool lumped_mass);
+	ElasticProblem (const int poly_order,
+                    const bool lumped_mass,
+                    std::fstream &time_file);
 	~ElasticProblem ();
 	void run (std::string time_integrator, int nx, int ny=-1, int nz=-1);
 	void compute_errors ();
 	std::vector<double> L1_error, L2_error;
+    std::vector<std::string> L1_names, L2_names;
 	
+        // To access the data for convergnece table:
+    unsigned int n_dofs, n_cells;
+    
 private:
 	
 	void setup_system ();
@@ -103,7 +110,7 @@ private:
 	
 	// Also, keep track of the current time and the time spent evaluating
     // certain functions
-//    TimerOutput                      timer_output;
+    TimerOutput                      computing_timer;
     
     // Info for time stepping:
     double current_time;
@@ -118,10 +125,13 @@ private:
 
 
 template <int dim>
-ElasticProblem<dim>::ElasticProblem (const int poly_order, const bool lumped_mass)
+ElasticProblem<dim>::ElasticProblem (const int poly_order,
+                                     const bool lumped_mass,
+                                     std::fstream &time_file)
 :
 dof_handler (triangulation),
 fe (FE_Q<dim>(poly_order), dim),
+computing_timer(time_file, TimerOutput::summary, TimerOutput::cpu_and_wall_times),
 disp(0)
 {}
 
@@ -145,6 +155,11 @@ void ElasticProblem<dim>::setup_system ()
 											ExactSolution<dim>(dim, current_time),
 											constraints);
     
+	VectorTools::interpolate_boundary_values (dof_handler,
+                                              1,
+                                              ExactSolution<dim>(dim, current_time),
+                                              constraints);
+    
 	constraints.close ();
 	
 	CompressedSparsityPattern c_sparsity(dof_handler.n_dofs());
@@ -162,6 +177,10 @@ void ElasticProblem<dim>::setup_system ()
     old_solution.reinit(dof_handler.n_dofs());
     old_velocity.reinit(dof_handler.n_dofs());
     linear_combo.reinit(dof_handler.n_dofs());
+    
+    this->n_dofs = dof_handler.n_dofs();
+    this->n_cells = triangulation.n_active_cells();
+    
 }//setup_system
 
 
@@ -248,7 +267,7 @@ void ElasticProblem<dim>::assemble_implicit_system ()
        // Assemble the local matrices into the global system:
     constraints.distribute_local_to_global(cell_mass, local_dof_indices, consistent_mass_matrix);
 
-    constraints.distribute_local_to_global(cell_mass, local_dof_indices, stiffness_matrix);
+    constraints.distribute_local_to_global(cell_stiffness, local_dof_indices, stiffness_matrix);
  		
  	}//cell
 
@@ -259,7 +278,8 @@ void ElasticProblem<dim>::output_results (const unsigned int cycle, std::string 
 {
 	std::string filename = "./output_d";
 	filename += Utilities::int_to_string(dim,1);
-	filename += "/";//solution";//+Utilities::int_to_string (cycle, 6)
+	filename += "/";//solution";
+//    filename += Utilities::int_to_string (cycle, 6);
 	filename += time_integrator;
 	filename += "_" + Utilities::int_to_string(triangulation.n_active_cells(),6);
 	filename += "_" + Utilities::int_to_string(fe.degree,1);
@@ -345,47 +365,219 @@ void ElasticProblem<dim>::create_grid (int nx, int ny, int nz)
 template <int dim>
 void ElasticProblem<dim>::compute_errors(void)
 {
-//	Vector<double> local_errors (triangulation.n_active_cells());
-//	
-//	for(int i=0; i<2*dim; ++i){
-//	
-//	ComponentSelectFunction<dim> mask(i, 2*dim);
-//		
-//	local_errors = 0.0;
-//	VectorTools::integrate_difference(dof_handler, 
-//									td.access_current_solution(),
-//									ExactSolution<dim>(2*dim, td.current_time()),
-//									local_errors,
-//									QGauss<dim>(fe.degree+2),
-//									VectorTools::L2_norm,
-//									&mask);
-//	
-//	L2_error[i] = local_errors.l2_norm();
-//	
-//	local_errors = 0.0;
-//	VectorTools::integrate_difference(dof_handler, 
-//									td.access_current_solution(),
-//									ExactSolution<dim>(2*dim, td.current_time()),
-//									local_errors,
-//									QGauss<dim>(fe.degree+2),
-//									VectorTools::L1_norm,
-//									&mask);
-//	
-//	L1_error[i] = local_errors.l1_norm();
-//	}
+        // The number of errors we compute depends on dimension:
+    unsigned int n_comp = 0;
+    
+    if(dim==1)
+    {
+        n_comp = 4; // u,v,E,energy
+        
+        L1_error.resize(n_comp, 0.0);
+        L1_names.resize(n_comp);
+        
+        L2_error.resize(n_comp, 0.0);
+        L2_names.resize(n_comp);
+        
+        L1_names[0] = "L1_u_x";
+        L1_names[1] = "L1_v_x";
+        L1_names[2] = "L1_E_xx";
+        L1_names[3] = "L1_energy";
+        
+        L2_names[0] = "L2_u_x";
+        L2_names[1] = "L2_v_x";
+        L2_names[2] = "L2_E_xx";
+        L2_names[3] = "L2_energy";
+    }
+    else if (dim==2)
+    {
+        n_comp = 8; // ux, uy, vx, vy, Exx, Exy, Eyy, energy
+        
+        L1_error.resize(n_comp, 0.0);
+        L1_names.resize(n_comp);
+        
+        L2_error.resize(n_comp, 0.0);
+        L2_names.resize(n_comp);
+        
+        L1_names[0] = "L1_u_x";
+        L1_names[1] = "L1_u_y";
+        L1_names[2] = "L1_v_x";
+        L1_names[3] = "L1_v_y";
+        L1_names[4] = "L1_E_xx";
+        L1_names[5] = "L1_E_yy";
+        L1_names[6] = "L1_E_xy";
+        L1_names[7] = "L1_energy";
+        
+        L1_names[0] = "L2_u_x";
+        L1_names[1] = "L2_u_y";
+        L1_names[2] = "L2_v_x";
+        L1_names[3] = "L2_v_y";
+        L1_names[4] = "L2_E_xx";
+        L1_names[5] = "L2_E_yy";
+        L1_names[6] = "L2_E_xy";
+        L1_names[7] = "L2_energy";
+    }
+    
+        // Create an identity tensor:
+    Tensor<2,dim> Id;
+	Id = 0.0;
+	for(int d=0; d<dim; ++d)
+		Id[d][d] = 1;
+    
+    QGauss<dim>  quadrature_formula(std::ceil(((3.0*fe.degree) +1)/2));
+    
+    FEValues<dim> fe_values (fe, quadrature_formula,
+                             update_values   |
+                             update_gradients |
+                             update_quadrature_points |
+                             update_JxW_values);
+    
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   n_q_points    = quadrature_formula.size();
+    
+    std::vector<unsigned int> local_dof_indices (dofs_per_cell);
+    
+        // Now we can begin with the loop
+        // over all cells:
+    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
+    
+    double l=lambda(dim);
+    double m=mu(dim);
+    
+    double trE;
+    Tensor<2,dim> E, Stress;
+    
+        // Numerical solution values
+    std::vector<Tensor<1,dim> > u(n_q_points), v(n_q_points);
+    std::vector<Tensor<2,dim> > grad_u(n_q_points);
+    
+        // Exact solution:  prefaced with "e_" for "exact"
+    ExactSolution<dim> e_soln(dim, current_time);
+    Tensor<1,dim> e_u, e_v;
+    Tensor<2,dim> e_E, e_S;
+    
+        // Energies:
+    double energy_h, e_energy;
+    
+    for (; cell!=endc; ++cell)
+ 	{
+ 		fe_values.reinit (cell);
+        
+        fe_values[disp].get_function_values(solution, u);
+        fe_values[disp].get_function_values(old_solution, v);
+        fe_values[disp].get_function_gradients(solution, grad_u);
+ 		
+ 		for (unsigned int q=0; q<n_q_points; ++q)
+ 		{
+            double JxW = fe_values.JxW(q);
+            Point<dim> point = fe_values.quadrature_point(q);
+            
+            if(dim==1)
+            {
+                e_u[0] = e_soln.value(point, 0);
+                e_v[0] = e_soln.value(point, 1);
+                e_E[0][0] = e_soln.value(point, 2);
+            }
+            else if (dim==2)
+            {
+                e_u[0] = e_soln.value(point, 0);
+                e_u[1] = e_soln.value(point, 1);
+                e_v[0] = e_soln.value(point, 2);
+                e_v[1] = e_soln.value(point, 3);
+                e_E[0][0] = e_soln.value(point, 4);
+                e_E[1][1] = e_soln.value(point, 5);
+                e_E[0][1] = e_soln.value(point, 6);
+                e_E[1][0] = e_E[0][1];
+            }
+            
+            E = 0.5*(grad_u[q] + transpose(grad_u[q]));
+            trE = 0.0;
+            for(int d=0; d<dim; ++d)
+                trE += E[d][d];
+            
+            Stress = Id;
+            Stress *= (l*trE);
+            Stress += (2.0*m)*E;
+            
+            trE = 0.0;
+            for(int d=0; d<dim; ++d)
+                trE += e_E[d][d];
+            
+            e_S = Id;
+            e_S *= (l*trE);
+            e_S += (2.0*m)*e_E;
+            
+            energy_h = rho*(v[q]*v[q]) + scalar_product(E,Stress);
+            e_energy = rho*(e_v*e_v) + scalar_product(e_E, e_S);
+            
+            if(dim==1)
+            {
+                L1_error[0] += std::abs(u[q][0] - e_u[0])*JxW;
+                L1_error[1] += std::abs(v[q][0] - e_v[0])*JxW;
+                L1_error[2] += std::abs(E[0][0] - e_E[0][0])*JxW;
+                L1_error[3] += std::abs(energy_h - e_energy)*JxW;
+                
+                L2_error[0] += (u[q][0] - e_u[0])*(u[q][0] - e_u[0])*JxW;
+                L2_error[1] += (v[q][0] - e_v[0])*(v[q][0] - e_v[0])*JxW;
+                L2_error[2] += (E[0][0] - e_E[0][0])*(E[0][0] - e_E[0][0])*JxW;
+                L2_error[3] += (energy_h - e_energy)*(energy_h - e_energy)*JxW;
+            }
+            else if (dim==2)
+            {
+                L1_error[0] += std::abs(u[q][0] - e_u[0])*JxW;
+                L1_error[1] += std::abs(u[q][1] - e_u[1])*JxW;
+                L1_error[2] += std::abs(v[q][0] - e_v[0])*JxW;
+                L1_error[3] += std::abs(v[q][1] - e_v[1])*JxW;
+                L1_error[4] += std::abs(E[0][0] - e_E[0][0])*JxW;
+                L1_error[5] += std::abs(E[1][1] - e_E[1][1])*JxW;
+                L1_error[6] += std::abs(E[0][1] - e_E[0][1])*JxW;
+                L1_error[7] += std::abs(energy_h - e_energy)*JxW;
+                
+                L2_error[0] += (u[q][0] - e_u[0])*(u[q][0] - e_u[0])*JxW;
+                L2_error[1] += (u[q][1] - e_u[1])*(u[q][1] - e_u[1])*JxW;
+                L2_error[2] += (v[q][0] - e_v[0])*(v[q][0] - e_v[0])*JxW;
+                L2_error[3] += (v[q][1] - e_v[1])*(v[q][1] - e_v[1])*JxW;
+                L2_error[4] += (E[0][0] - e_E[0][0])*(E[0][0] - e_E[0][0])*JxW;
+                L2_error[5] += (E[1][1] - e_E[1][1])*(E[1][1] - e_E[1][1])*JxW;
+                L2_error[6] += (E[0][1] - e_E[0][1])*(E[0][1] - e_E[0][1])*JxW;
+                L2_error[7] += (energy_h - e_energy)*(energy_h - e_energy)*JxW;
+            }
+
+ 		}//q_point
+    }//cell
+    
+    for(unsigned int i=0; i<L2_error.size(); ++i)
+        L2_error[i] = std::sqrt(L2_error[i]);
+    
+    
+//    std::string fileName = "./output_d1/" + time_integrator + "_p" + sp[j] + "_h" + snx[k] + ".dat";
+//    std::fstream fp;
+//    fp.open(fileName.c_str(), std::ios::out);
+//    fp.precision(16);
+//    fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
+//    for(int i=0; i<2; ++i)
+//        fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
+//    for(int i=0; i<2; ++i)
+//        fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
+//    fp.close();
 	
 }//compute_errors
 
 template <int dim>
 void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int nz)
 {
+    
+    computing_timer.enter_section("Total run time");
+    
 	create_grid(nx, ny, nz);
-	
+    
 	std::cout << "   Number of active cells:       "
             << triangulation.n_active_cells()
             << std::endl;
 	
+    computing_timer.enter_section("Setup DOF systems");
 	setup_system ();
+    computing_timer.exit_section();
 	
 	std::cout << "   Number of degrees of freedom: "
             << dof_handler.n_dofs()
@@ -400,8 +592,8 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         // Mesh size:
     double h = 1./double(nx);
     
-        // For a CFL of 0.5:
-    double cfl = 0.50;
+        // Set time step size based on a constant CFL:
+    double cfl = 0.25;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
@@ -410,6 +602,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     std::cout << "\n Mesh size:       h  = " << h;
     std::cout << "\n Time step size:  dt = " << delta_t;
     std::cout << "\n Number of steps: N  = " << n_timesteps;
+    std::cout << std::endl;
     
         // Now actually do the work:
     current_time = 0.;
@@ -427,8 +620,15 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     {
         current_time += delta_t;
         
-        assemble_implicit_system();
+        // Set old solution from the current
+        old_solution = solution;
+        solution = 0.;
         
+        computing_timer.enter_section("Assemble matrices");
+        assemble_implicit_system();
+        computing_timer.exit_section();
+        
+        computing_timer.enter_section("Compute RHS");
         system_rhs = 0.0;
         linear_combo = old_solution;
         linear_combo *= inv_dt;
@@ -438,16 +638,37 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         system_rhs *= inv_dt;
         
         system_matrix = 0.;
-        system_matrix.add(delta_t,consistent_mass_matrix);
+        system_matrix.add(inv_dt*inv_dt,consistent_mass_matrix);
         system_matrix.add(1.0,stiffness_matrix);
+        computing_timer.exit_section();//Compute RHS
         
+        computing_timer.enter_section("Linear solve");
         SparseDirectUMFPACK directSolver;
         directSolver.initialize (system_matrix);
         directSolver.vmult (solution, system_rhs);
         
         constraints.distribute (solution);
+        computing_timer.exit_section();//Linear solve
+        
+        old_velocity = solution;
+        old_velocity -= old_solution;
+        old_velocity *= inv_dt;
     }
+    
+        // Total run time section
+    computing_timer.exit_section();
+    
+        // Compute and output the errors:
+        // My function assumes the velocity
+        // is stored in "old_solution"
+    
+        // Create the velocity vector:
+        // For Backward Euler:
+    old_solution -= solution;
+    old_solution *= (-1.*inv_dt);
+    compute_errors();
 	
+        // Output the results
 	output_results (n_timesteps, time_integrator);
 	
 }
@@ -461,71 +682,99 @@ int main ()
 {
     try
     {
-    int np=5, nh=8;
+    int np=5, nh=9;
 
-    int nx[8] = {1, 2, 4, 8, 16, 32, 64, 128};
+    int nx[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
             //int p[5] = {1, 2, 5};
     int p[5] = {1, 2, 3, 4, 5};
 
-    std::string snx[8] = {"1", "2", "4", "8", "16", "32", "64", "128"};
+    std::string snx[9] = {"1", "2", "4", "8", "16", "32", "64", "128", "256"};
         //std::string sp[5] = {"1", "2", "5"};
     std::string sp[5] = {"1", "2", "3", "4", "5"};
         
     std::string time_integrator = "BackwardEuler";
+
+    for(int j=0; j<np; ++j)
+    {
+            // Create a convergence table
+            // for each polynomial order:
+        dealii::ConvergenceTable	convergence_table;
         
-    dealii::Timer timer;
-     
- 	for(int j=0; j<np; ++j)     
-        for(int k=0; k<nh; ++k)
+//        for(int k=0; k<nh; ++k)
+        for(int k=3; k<nh; ++k)
         {
-            timer.start();
-            ContinuousGalerkin::ElasticProblem<1> ed_problem(p[j], false);
+            std::string fileName = "./" + time_integrator + "_Timing_p" + sp[j] + "_h" + snx[k] + ".dat";
+            std::fstream timing_stream;
+            timing_stream.open(fileName.c_str(), std::ios::out);
+            
+            
+            ContinuousGalerkin::ElasticProblem<1> ed_problem(p[j], false, timing_stream);
             ed_problem.run (time_integrator, nx[k]);
-            timer.stop();
-            ed_problem.compute_errors();
-            std::cout << "\nElapsed CPU time: " << timer() << " seconds.";
-            std::cout << "Elapsed wall time: " << timer.wall_time() << " seconds.\n";
-
-            std::string fileName = "./output_d1/" + time_integrator + "_p" + sp[j] + "_h" + snx[k] + ".dat";
-            std::fstream fp;
-            fp.open(fileName.c_str(), std::ios::out);
-            fp.precision(16);
-            fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
-            for(int i=0; i<2; ++i)
-            fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
-            for(int i=0; i<2; ++i)
-            fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
-            fp.close();
-
-            timer.reset();
-        }
+            
+            timing_stream.close();
+            
+            convergence_table.add_value("nx", nx[k]);
+            convergence_table.add_value("cells", ed_problem.n_cells);
+            convergence_table.add_value("dofs", ed_problem.n_dofs);
+            
+            for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                convergence_table.add_value(ed_problem.L1_names[i], ed_problem.L1_error[i]);
+            
+            for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                convergence_table.add_value(ed_problem.L2_names[i], ed_problem.L2_error[i]);
+        
+                // Hack:  Rather than copying all of the relevant info, I will just do the
+                // following stuff after the most refined mesh has been solved:
+            if( (k+1)==nh)
+            {
+                    //format the error table
+                
+                for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                {
+                    convergence_table.set_precision(ed_problem.L1_names[i], 8);
+                    convergence_table.set_scientific(ed_problem.L1_names[i], true);
+                }
+                
+                for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                {
+                    convergence_table.set_precision(ed_problem.L2_names[i], 8);
+                    convergence_table.set_scientific(ed_problem.L2_names[i], true);
+                }
+                
+                    //convergence_table.set_tex_caption("cells", "\\# cells");
+                    //convergence_table.set_tex_caption("dofs", "\\# dofs");
+                    //convergence_table.set_tex_caption("L2", "$L^2-error$");
+                
+                    //omiting columns that do not need a convergence rate calculated
+                convergence_table.omit_column_from_convergence_rate_evaluation("nx");
+                convergence_table.omit_column_from_convergence_rate_evaluation("cells");
+                convergence_table.omit_column_from_convergence_rate_evaluation("dofs");
+                
+                    //calculating the convergence rates for the L1, L2 norms for each refinement mesh
+                for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                    convergence_table.evaluate_convergence_rates(ed_problem.L1_names[i],
+                                                 dealii::ConvergenceTable::reduction_rate_log2);
+                
+                for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                    convergence_table.evaluate_convergence_rates(ed_problem.L2_names[i],
+                                                 dealii::ConvergenceTable::reduction_rate_log2);
+                
+            }//last mesh at constant polynomial order
+        
+        }//k
+        
+            //print the convergence to the file:
+        std::string fileName = "./" + time_integrator + "Convergence_p" + sp[j] + ".dat";
+        std::fstream fp;
+        fp.open(fileName.c_str(), std::ios::out);
+        convergence_table.write_text(fp);
+        fp.close();
+        
+    }//j
 		
             // dim = 2
-//	for(int j=0; j<np; ++j)     
-//		for(int k=0; k<nh; ++k)
-//   			for(int i=0; i<nt; ++i)
-//        {
-//	  	timer.start();
-//        ContinuousGalerkin::ElasticProblem<2> ed_problem(p[j]);
-//        ed_problem.run (timeint[i], nx[k], nx[k]);
-//        timer.stop();
-//        ed_problem.compute_errors();
-//        std::cout << "\nElapsed CPU time: " << timer() << " seconds.";
-//		std::cout << "Elapsed wall time: " << timer.wall_time() << " seconds.\n";
-//		
-//		std::string fileName = "./output_d2/" + timeint[i] + "_p" + sp[j] + "_h" + snx[k] + ".dat";
-//		std::fstream fp;
-//		fp.open(fileName.c_str(), std::ios::out);
-//		fp.precision(16);
-//		fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
-//		for(int i=0; i<2; ++i)
-//			fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
-//		for(int i=0; i<2; ++i)
-//			fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
-//		fp.close();
-//		
-//		timer.reset();
-//		}
+            // Copy from above and change the template parameter on the ed_problem<dim>
+            // Note that the k-loop should not go through 9, maybe 7?
 
     }
     catch (std::exception &exc)
