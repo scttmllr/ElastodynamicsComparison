@@ -182,4 +182,74 @@ double ExactSolutionTimeDerivative<3>::value (const Point<3> &p,
 	return -1;
 }
 
-//Instantiate the ExactSolutionClass?
+/**********
+ SECOND TIME DERIVATIVE
+ **********/
+template <int dim>
+class ExactSolutionSecondTimeDerivative : public Function<dim>
+{
+public:
+    ExactSolutionSecondTimeDerivative (const unsigned int n_components = 1,
+                                 const double time = 0.) : Function<dim>(n_components, time) {}
+    virtual double value (const Point<dim> &p,
+                          const unsigned int component = 0) const;
+};
+
+template < >
+double ExactSolutionSecondTimeDerivative<1>::value (const Point<1> &p,
+                                              const unsigned int comp) const
+{
+	double t = this->get_time ();
+    
+	if (comp == 0) // displacement
+		return -1.0*alpha1*alpha1*A_0*std::sin(m_0*p(0))*std::sin(alpha1*t);
+    
+//	if (comp == 1) // velocity
+//		return -1.0*alpha1*alpha1*A_0*std::sin(m_0*p(0))*std::sin(alpha1*t);
+//    
+//	if (comp == 2) // strain
+//		return alpha1*m_0*A_0*std::cos(m_0*p(0))*std::cos(alpha1*t);
+    
+	return -1;
+}
+
+template < >
+double ExactSolutionSecondTimeDerivative<2>::value (const Point<2> &p,
+                                              const unsigned int comp) const
+{
+	double t = this->get_time ();
+    
+	if (comp == 0) // u_x
+		return -1.0*alpha*alpha*A_0*std::sin(m_0*p(0))*std::sin(m_1*p(1))*std::sin(alpha*t);
+    
+	if (comp == 1) // u_y
+		return -1.0*alpha*alpha*A_1*std::cos(m_0*p(0))*std::cos(m_1*p(1))*std::sin(alpha*t);
+    
+//	if (comp == 2) // v_x
+//		return -1.0*alpha*alpha*A_0*std::sin(m_0*p(0))*std::sin(m_1*p(1))*std::sin(alpha*t);
+//    
+//	if (comp == 3) // v_y
+//		return -1.0*alpha*alpha*A_1*std::cos(m_0*p(0))*std::cos(m_1*p(1))*std::sin(alpha*t);
+//    
+//	if (comp == 4) //E_xx
+//		return alpha*m_0*A_0*std::cos(m_0*p(0))*std::sin(m_1*p(1))*std::cos(alpha*t);
+//    
+//	if (comp == 6) //E_xy
+//		return alpha*0.50*(m_1*A_0*std::sin(m_0*p(0))*std::cos(m_1*p(1))*std::cos(alpha*t) -
+//                           alpha*m_0*A_1*std::sin(m_0*p(0))*std::cos(m_1*p(1))*std::cos(alpha*t));
+//    
+//	if (comp == 5) // E_yy
+//		return -1.*alpha*m_1*A_1*std::cos(m_0*p(0))*std::sin(m_1*p(1))*std::cos(alpha*t);
+    
+	return -1;
+}
+
+template < >
+double ExactSolutionSecondTimeDerivative<3>::value (const Point<3> &p,
+                                              const unsigned int comp) const
+{
+	std::cout<<"\nExactSolution::value not implemented for d==3!"<<std::endl;
+	exit(1);
+    
+	return -1;
+}
