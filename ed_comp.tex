@@ -8,7 +8,51 @@
 %\setlength{\oddsidemargin}{0in}
 %\setlength{\evensidemargin}{0in}
 
-\usepackage{amsmath}
+
+\usepackage{amssymb,amsmath}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   User defined commands   %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+\newtheorem{problem}{Problem}  %%
+      
+\newcommand{\tns}[1]{\ensuremath{\mathbf{#1}}} %tensor (rank 2)
+\newcommand{\bv}[1]{\ensuremath{\mathbf{#1}}} %bold vector
+\newcommand{\transpose}[1]{\ensuremath{{#1}^{\text{T}}}} % Transpose
+\newcommand{\inverse}[1]{\ensuremath{{#1}^{-1}}} % Inverse
+\newcommand{\invtrans}[1]{\ensuremath{{#1}^{-\text{T}}}} % Inverse transpose
+\newcommand{\Lin}{\ensuremath{\mathrm{Lin}}} % Lin
+\newcommand{\Orth}{\ensuremath{\mathrm{Orth}}} % Orth
+\newcommand{\Sym}{\ensuremath{\mathrm{Sym}}} % sym
+\newcommand{\trace}{\ensuremath{\mathrm{tr}}} % trace
+
+\newcommand{\ldiv}{\ensuremath{\mathrm{div \,}}} % div (lower case div)
+\newcommand{\curl}{\ensuremath{\mathrm{curl \,}}} % curl
+\newcommand{\grad}{\ensuremath{\mathrm{grad\,}}} % curl
+\newcommand{\e}{\ensuremath{\mathrm{e}}} % Exponential
+
+\newcommand{\bdiv}{\ensuremath{\mathrm{Div \,}}} % Div
+\newcommand{\Grad}{\ensuremath{\mathrm{Grad\,}}} % Grad
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Weak formulation operators
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newcommand{\wt}[1]{\hat{#1}}
+\newcommand{\dV}{\mathrm{dV}}
+\newcommand{\dS}{\mathrm{dS}}
+\newcommand{\dQ}{\partial \mathcal{Q}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \lj: left jump operator 			%
+% \rj: right jump operator 			%
+\newcommand{\lj}{\left[ \negthinspace \left[ } 		%
+\newcommand{\rj}{\right] \negthinspace \right]} 	%
+% \la: left average operator 			%
+% \ra: right average operator 		%
+\newcommand{\la}{\langle \negthickspace \langle} %
+\newcommand{\ra}{\rangle \negthickspace \rangle} 	%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 \newcommand{\CS}{c_{\text s}}
@@ -21,17 +65,17 @@
 \date{\today}%{May 16, 2008}
 \maketitle
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Abstract
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section*{Abstract}
 We are providing the first quantitative comparison of numerical
 methods for elastodynamics, also referred to as \emph{structural dynamics}.
 We shall only compare finite element methods.  
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Introduction
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Introduction}
 
 What are the popular/industry standard methods for solid mechanics
@@ -41,9 +85,9 @@ choose?
 
 TODO:  Reza and Philip
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Finite elements
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Finite element formulations}
 
 \begin{enumerate}
@@ -76,9 +120,41 @@ as well as quadrature schemes/rules used.  Polynomial orders, etc.
 Optimal convergence rates.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% One field CG
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{One-field continuous Galerkin formulation}
+
+Spatial discretization via continuous finite elements yield the semi-discrete equation
+\begin{equation}
+M \ddot{U} + K U  = F,
+\end{equation}
+with the matrices given by
+\begin{equation}
+M_{ij} = \int_V \hat{u}_i \rho \hat{u}_j \, dV, 
+\quad
+K_{ij} = \int_V \nabla \hat{u}_i \mathbb{C} [\Sym(\nabla \hat{u}_j)] \, dV, 
+\quad
+F_i = \int_V  \hat{u}_i \rho b_i \, dV
+\end{equation}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Backward Euler
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Backward Euler}
+
+Backward Euler timestepping yields
+\begin{equation}
+\dot{U}^{n+1} = \frac{U^{n+1} - U^n}{\Delta t}, 
+\quad 
+\ddot{U} = \frac{U^{n+1}}{(\Delta t)^2} - \frac{U^n}{(\Delta t)^2} - \frac{\dot{U}^n}{\Delta t}
+\end{equation}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Exact solutions
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Exact solutions}
 
 
@@ -186,6 +262,5 @@ The function \underline{void SLSubConfig::setSpecifiedLoadFlags()} can be used i
 %\bibliography{bib_database_ed_cohesive}
 
 \end{document}
-
 
 
