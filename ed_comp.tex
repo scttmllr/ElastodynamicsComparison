@@ -127,6 +127,7 @@ Optimal convergence rates.
 
 Spatial discretization via continuous finite elements yield the semi-discrete equation
 \begin{equation}
+\label{eq:1f_EOM}
 M \ddot{U} + K U  = F,
 \end{equation}
 with the matrices given by
@@ -150,6 +151,46 @@ Backward Euler timestepping yields
 \quad 
 \ddot{U} = \frac{U^{n+1}}{(\Delta t)^2} - \frac{U^n}{(\Delta t)^2} - \frac{\dot{U}^n}{\Delta t}
 \end{equation}
+Substituting into \eqref{eq:1f_EOM}, we have
+\begin{equation}
+\left(\frac{1}{(\Delta t)^2} M + K \right) U^{n+1} = 
+F + M \left( \frac{U^n}{(\Delta t)^2} + \frac{\dot{U}^n}{\Delta t} \right).
+\end{equation}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Bathe
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Bathe's method}
+
+Bathe's method~\cite{Bathe2007} is a two-stage, second order accurate implicit time integration method.
+The first step is of size $\Delta t/2$ using the trapezoidal rule.  The second step is a 
+backward difference formula (BDF2) scheme using the half-step and previous values.  BDF
+schemes of order 2 or greater are linear multistep schemes.
+
+Applying the trapezoidal rule with step size $(\Delta t/2)$, the time derivatives are
+\begin{equation}
+\label{eq:TrapDDt}
+\dot{U}^{n+1/2} = 
+\qquad
+\ddot{U}^{n+1/2} = 
+\end{equation}
+The linear algebraic system generated from \eqref{eq:1f_EOM} and \eqref{eq:TrapDDt}
+is 
+\begin{equation}
+\left(\frac{16}{(\Delta t)^2} M + K \right) U^{n+1/2} = 
+\end{equation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Newmark
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Newmark's method}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Forward Euler
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Forward Euler}
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
