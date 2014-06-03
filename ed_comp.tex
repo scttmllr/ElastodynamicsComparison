@@ -132,6 +132,7 @@ M \ddot{U} + K U  = F,
 \end{equation}
 with the matrices given by
 \begin{equation}
+\label{eq:1f_matrices}
 M_{ij} = \int_V \hat{u}_i \rho \hat{u}_j \, dV, 
 \quad
 K_{ij} = \int_V \nabla \hat{u}_i \mathbb{C} [\Sym(\nabla \hat{u}_j)] \, dV, 
@@ -139,14 +140,24 @@ K_{ij} = \int_V \nabla \hat{u}_i \mathbb{C} [\Sym(\nabla \hat{u}_j)] \, dV,
 F_i = \int_V  \hat{u}_i \rho b_i \, dV
 \end{equation}
 
+In all of the following time integration schemes,
+I shall attempt to write the equations so that we are
+solving for the displacements $U$, even though it
+may be more convenient to solve for the velocities
+or accelerations in some cases.  The main differences
+present are the scalar coefficients and the presence
+of the mass matrix rather than the stiffness on the 
+right-hand side of the equation.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Backward Euler
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Backward Euler}
+\subsection{Backward Euler}
 
 Backward Euler timestepping yields
 \begin{equation}
+\label{eq:EulerDDt}
 \dot{U}^{n+1} = \frac{U^{n+1} - U^n}{\Delta t}, 
 \quad 
 \ddot{U} = \frac{U^{n+1}}{(\Delta t)^2} - \frac{U^n}{(\Delta t)^2} - \frac{\dot{U}^n}{\Delta t}
@@ -161,37 +172,255 @@ F + M \left( \frac{U^n}{(\Delta t)^2} + \frac{\dot{U}^n}{\Delta t} \right).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Bathe
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Bathe's method}
+\subsection{Bathe's method}
 
 Bathe's method~\cite{Bathe2007} is a two-stage, second order accurate implicit time integration method.
 The first step is of size $\Delta t/2$ using the trapezoidal rule.  The second step is a 
 backward difference formula (BDF2) scheme using the half-step and previous values.  BDF
-schemes of order 2 or greater are linear multistep schemes.
+schemes of order 2 or greater are linear multistep schemes.  Note that this method is essentially leap-frogging
+applications of the trapezoidal and BDF2 schemes, each with half of the chosen time step size.
 
 Applying the trapezoidal rule with step size $(\Delta t/2)$, the time derivatives are
 \begin{equation}
 \label{eq:TrapDDt}
-\dot{U}^{n+1/2} = 
-\qquad
-\ddot{U}^{n+1/2} = 
+\dot{U}^{n+1/2} = -\dot{U}^n + \frac{4}{\Delta t} \left( U^{n+1/2}-U^n\right),
+\quad
+\ddot{U}^{n+1/2} = -\ddot{U}^n + \frac{4}{\Delta t} \left( \dot{U}^{n+1/2}-\dot{U}^n\right).
 \end{equation}
 The linear algebraic system generated from \eqref{eq:1f_EOM} and \eqref{eq:TrapDDt}
 is 
 \begin{equation}
-\left(\frac{16}{(\Delta t)^2} M + K \right) U^{n+1/2} = 
+\left(\frac{16}{(\Delta t)^2} M + K \right) U^{n+1/2} = F^{n+1/2}
++ M\left[ \frac{16}{(\Delta t)^2} U^n + \frac{8}{\Delta t} \dot{U}^n + \ddot{U}^n\right]
+\end{equation}
+
+The second step is to apply the BDF2 method at $t^{n+1}$ using the $t^{n+1/2}$ and $t^n$ steps
+as input to the 2-step method.  
+The time derivatives are computed as
+\begin{equation}
+\label{eq:BDF2DDt}
+\dot{U}^{n+1} = \frac{1}{\Delta t}\left( 3U^{n+1} -4U^{n+1/2} + U^n\right),
+\quad
+\ddot{U}^{n+1} = \frac{1}{\Delta t}\left( 3\dot{U}^{n+1} -4\dot{U}^{n+1/2} + \dot{U}^n\right)
+\end{equation}
+The resulting linear system for $U^{n+1}$ is
+\begin{equation}
+\left(\frac{9}{(\Delta t)^2} M + K \right) U^{n+1} = F^{n+1}
++ M\left[ \frac{12}{(\Delta t)^2} U^{n+1/2} - \frac{3}{(\Delta t)^2} U^{n}
++ \frac{4}{\Delta t} \dot{U}^{n+1/2} - \frac{1}{\Delta t} \dot{U}^{n}
+\right]
 \end{equation}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Newmark
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Newmark's method}
+\subsection{Newmark methods}
+
+The Newmark family of methods is a two parameter family of methods
+where
+\begin{eqnarray}
+\label{eq:NewmarkMethod}
+U^{n+1} &=& U^n + (\Delta t)\dot{U}^n + \frac{(\Delta t)^2}{2}\left\{
+(1-2\beta) \ddot{U}^n + 2\beta \ddot{U}^{n+1}
+\right\}
+%
+\\
+%
+\dot{U}^{n+1} &=& \dot{U}^n + (\Delta t)\left\{
+(1-\gamma) \ddot{U}^n + \gamma \ddot{U}^{n+1}
+\right\}
+\end{eqnarray}
+The resulting linear system for $U^{n+1}$ is then
+\begin{equation}
+\left(\frac{1}{\beta (\Delta t)^2} M + K \right)U^{n+1}
+= F^{n+1} + M \left( 
+\frac{1}{\beta (\Delta t)^2} U^n
++ \frac{1}{\beta \Delta t} \dot{U}^n
++ \frac{1-2\beta}{2\beta} \ddot{U}^n
+\right)
+\end{equation}
+From the solution to this equation, one can obtain the 
+velocity and accelerations at $t^{n+1}$ from the previous equations.
+
+Note:  I came across a paper on the web by Kane,Marsden,Ortiz and West
+that states Newmark methods are variational and thus symplectic and
+momentum preserving.  They also have good energy behavior.  Although
+it is a non-canonical symplectic form and a non-standard momenta.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Trapezoidal Rule
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Average acceleration}
+
+The average acceleration method, also known as the trapezoidal rule, is a 
+member of the Newmark family of integration schemes.  
+It is unconditionally stable and second order accurate \cite{Hughes2012}.
+The parameters $\beta=1/4$ and $\gamma=1/2$ in \eqref{eq:NewmarkMethod}
+to obtain the trapezoidal rule.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Linear acceleration
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Linear acceleration}
+
+The trapezoidal rule, also known as the average acceleration
+method, is a member of the Newmark family of integration schemes.  
+It is conditionally stable and second order accurate \cite{Hughes2012}.
+The parameters $\beta=1/6$ and $\gamma=1/2$ in \eqref{eq:NewmarkMethod}
+to obtain the trapezoidal rule.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Central difference
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Central difference (explicit)}
+
+The explicit central difference formula is a member of the Newmark
+family.  The choice $\beta=0, \gamma=1/2$ combined with mass-lumping yield
+a second order accurate explicit time integration method:
+\begin{eqnarray}
+U^{n+1} &=& U^n + (\Delta t)\dot{U}^n + \frac{(\Delta t)^2}{2}\ddot{U}^n,
+%
+\\
+%
+\dot{U}^{n+1} &=& \frac{2}{\Delta t}\left[\inverse{M_L}(F^{n+1}-KU^{n+1})+\ddot{U}^n\right]
++\dot{U}^n.
+\end{eqnarray}
+
+Note:  CDF is also known as explicit Newmark as well as velocity-Verlet.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Alpha methods
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Generalized $\alpha$-methods}
+
+Generalized $\alpha$-methods \cite{Chung1993} use the Newmark time derivative approximations \eqref{eq:NewmarkMethod}.
+However, two additional parameters $\{\alpha_m, \alpha_f\}$ are introduced as 
+the governing equations are rewritten as
+\begin{equation}
+\label{eq:GenAlpha}
+M \left[ (1-\alpha_m) \ddot{U}^{n+1} + \alpha_m \ddot{U}^n \right]
++ K \left[ (1-\alpha_f) {U}^{n+1} + \alpha_f {U}^n\right]
+= (1-\alpha_f)F^{n+1} + \alpha_f F^n.
+\end{equation}
+Second order accuracy and unconditional stability are obtained
+if the following are satisfied:
+\begin{equation}
+\alpha_m<\alpha_f\le \frac{1}{2}, 
+\quad 
+\gamma = \frac{1}{2} - \alpha_m + \alpha_f,
+\quad
+\beta_n \ge \frac{1}{4} + \frac{1}{2}(\alpha_f - \alpha_m).
+\end{equation}
+
+We can satisfy all of these by choosing all four parameters
+$\{\alpha_m, \alpha_f, \beta, \gamma\}$ based on a single
+parameters $\rho_\infty$ as
+\begin{eqnarray}
+\alpha_f &=& \rho_\infty/(1+\rho_\infty),
+\\
+\alpha_m &=& (2\rho_\infty-1)/(1+\rho_\infty),
+\\
+\beta &=& (1-\alpha_m+\alpha_f)^2/4,
+\\
+\gamma &=& 1/2 - \alpha_m + \alpha_f.
+\end{eqnarray}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% HHT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Hilber-Hughes-Taylor $\alpha$-method}
+
+HHT-$\alpha$ is obtained by setting $\alpha_m=0$ in the 
+generalized $\alpha$-method.
+If the parameters are selected such that \cite{Hughes2012}
+\begin{equation}
+\alpha_f \in \left[0,\frac{1}{3}\right], \quad \gamma = \frac{1+2\alpha_f}{2}, 
+\quad \beta = \frac{(1+\alpha_f)^2}{4},
+\end{equation}
+an unconditionally stable, second-order accurate scheme results.
+With these choices, selecting $\alpha_f=0$ results in the trapezoidal rule.
+
+Note:  Hughes has a "Comparison of Algorithms" section, but he looks at
+spectral radii of various methods with approximately the same computational cost.
+
+Note 2:  The $\alpha$ in \cite{Hughes2012} is actually $-\alpha_f$ here.  STM has
+adjusted the current equations appropriately.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% WBZ
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Wood-Bossak-Zienkiewicz $\alpha$-method}
+
+WBZ-$\alpha$ is obtained by setting $\alpha_f=0$ in the 
+generalized $\alpha$-method.
+If the parameters are selected such that \cite{Hughes2012}
+\begin{equation}
+\alpha_m \in \left[0,\frac{1}{3}\right], \quad \gamma = \frac{1+2\alpha_m}{2}, 
+\quad \beta = \frac{(1+\alpha_m)^2}{4},
+\end{equation}
+an unconditionally stable, second-order accurate scheme results.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Forward Euler
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{Forward Euler}
+\subsection{Forward Euler}
 
+The simplest explicit method is the forward Euler method.
+We solve the equation
+\begin{equation}
+M\ddot{U}^{n+1} = F^n - KU^n,
+\end{equation}
+with the time derivatives approximated as in \eqref{eq:EulerDDt}.
+We shall also replace the consistent mass matrix given in \eqref{eq:1f_matrices}
+with a lumped mass matrix $M_L$ given by (see, e.g., \cite{Hughes2012} or \cite{Cook2001})
+\begin{equation}
+(M_L)_{ij} =
+\begin{cases}
+   \sum_j \int_V \hat{u}_i \rho \hat{u}_j \, dV   & i = j, \\
+   0   & i \ne j.
+\end{cases}
+\end{equation}
+That is, $M_L$ is a diagonal matrix with positive non-zero entries
+that can be trivially inverted.
+
+The forward Euler method updates the displacement as
+\begin{equation}
+\label{eq:ForwardEuler}
+U^{n+1} = (\Delta t)^2 \inverse{(M_L)}K U^n + U^n + (\Delta t)\dot{U}^n.
+\end{equation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Explicit Generalized Alpha
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Explicit generalized $\alpha$-method}
+
+From \cite{Hulbert1996}:
+
+\begin{eqnarray}
+M[(1-\alpha_m)\ddot{U}^{n+1} + \alpha_m \ddot{U}^n]
+= F^n - KU^n, 
+%
+\\
+%
+U^{n+1} = U^n + (\Delta t)\dot{U}^n + \frac{(\Delta t)^2}{2} 
+\left( (1-2\beta)\ddot{U}^n + 2\beta \ddot{U}^{n+1}\right),
+%
+\\
+%
+\dot{U}^{n+1} = \dot{U}^n + (\Delta t)((1-\gamma)\ddot{U}^n + \gamma \ddot{U}^{n+1}),
+\end{eqnarray}
+%
+where the constants can be defined as a one-parameter family in terms
+of $\rho_b$ as
+\begin{equation}
+\alpha_m = \frac{2\rho_b-1}{1+\rho_b},
+\quad
+\beta = \frac{5-3\rho_b}{(1+\rho_b)^2(2-\rho_b)},
+\quad
+\gamma = \frac{3}{2}-\alpha_m.
+\end{equation}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Exact solutions
@@ -299,8 +528,42 @@ The function \underline{void SLSubConfig::setSpecifiedLoadFlags()} can be used i
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{$C^0(\Omega)$ solution with weak shocks}
 
-%\bibliographystyle{unsrt} 
-%\bibliography{bib_database_ed_cohesive}
+As suggested in \cite{Idesman2014}, we can consider a one-dimensional bar
+impacting a wall.
+
+Let $\Omega := \{x | x\in[0,L]\}$ with bar length $L=4$, density $\rho=1$,
+elastic modulus $\lambda = 1$.  The time interval is $0\le t \le 4$.
+Boundary conditions are
+\begin{equation}
+u(0,t)=t, \quad
+v(0,t)=1, \quad
+u(4,t)=0, \quad
+v(4,t)=0.
+\end{equation}
+The initial conditions are all zero.
+
+The analytical solution is given as
+\begin{equation}
+u(x,t) = \begin{cases}
+t-x & \text{ for } t \ge x,\\
+0 & \text{ for } t \le x.
+\end{cases}
+\end{equation}
+
+Note:  Idesman also has cases with weak shocks in higher dimensions.  We should look
+at his paper and maybe plot some of the same stuff?
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Conclusions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusions}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Bibliography
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\bibliographystyle{unsrt} 
+\bibliography{ed_comp.bib}
 
 \end{document}
 
