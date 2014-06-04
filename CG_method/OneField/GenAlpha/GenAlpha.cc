@@ -588,16 +588,11 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     unsigned int n_timesteps = final_time / delta_t;
     
     // Set parameters for the generalized alpha method:
-    double rhoInf = 0.;
+    double rhoInf = 0.25;
     double a_f = rhoInf/(1.+rhoInf);
     double a_m = (2.*rhoInf-1.)/(1.+rhoInf);
     double beta = (1.-a_m+a_f)*(1.-a_m+a_f)/4.;
     double gamma = 0.5 - a_m + a_f;
-    
-//    a_f = 0.;
-//    a_m = 0.;
-//    beta = 0.25;
-//    gamma = 0.5;
     
     // Store some coefficients:
     double a1 = (1.-a_m)/(beta*delta_t*delta_t);
@@ -723,7 +718,6 @@ int main ()
         
     std::string time_integrator = "GenAlpha";
 
-        np=2;
     for(int j=0; j<np; ++j)
     {
             // Create a convergence table
@@ -733,7 +727,7 @@ int main ()
 //        for(int k=0; k<nh; ++k)
         for(int k=3; k<nh; ++k)
         {
-            std::string fileName = "./" + time_integrator + "_Timing_p" + sp[j] + "_h" + snx[k] + ".dat";
+            std::string fileName = "./" + time_integrator + "_Timing_d1_p" + sp[j] + "_h" + snx[k] + ".dat";
             std::fstream timing_stream;
             timing_stream.open(fileName.c_str(), std::ios::out);
             
@@ -794,7 +788,7 @@ int main ()
         }//k
         
             //print the convergence to the file:
-        std::string fileName = "./" + time_integrator + "Convergence_p" + sp[j] + ".dat";
+        std::string fileName = "./" + time_integrator + "Convergence_d1_p" + sp[j] + ".dat";
         std::fstream fp;
         fp.open(fileName.c_str(), std::ios::out);
         convergence_table.write_text(fp);
@@ -806,6 +800,84 @@ int main ()
             // dim = 2
             // Copy from above and change the template parameter on the ed_problem<dim>
             // Note that the k-loop should not go through 9, maybe 7?
+        for(int j=0; j<np; ++j)
+        {
+                // Create a convergence table
+                // for each polynomial order:
+            dealii::ConvergenceTable	convergence_table;
+            
+                //        for(int k=0; k<nh; ++k)
+            for(int k=3; k<(nh-2); ++k)
+            {
+                std::string fileName = "./" + time_integrator + "_Timing_d2_p" + sp[j] + "_h" + snx[k] + ".dat";
+                std::fstream timing_stream;
+                timing_stream.open(fileName.c_str(), std::ios::out);
+                
+                
+                ContinuousGalerkin::ElasticProblem<2> ed_problem(p[j], false, timing_stream);
+                ed_problem.run (time_integrator, nx[k]);
+                
+                timing_stream.close();
+                
+                convergence_table.add_value("nx", nx[k]);
+                convergence_table.add_value("cells", ed_problem.n_cells);
+                convergence_table.add_value("dofs", ed_problem.n_dofs);
+                
+                for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                    convergence_table.add_value(ed_problem.L1_names[i], ed_problem.L1_error[i]);
+                
+                for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                    convergence_table.add_value(ed_problem.L2_names[i], ed_problem.L2_error[i]);
+                
+                    // Hack:  Rather than copying all of the relevant info, I will just do the
+                    // following stuff after the most refined mesh has been solved:
+                if( (k+1)==nh)
+                {
+                        //format the error table
+                    
+                    for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                    {
+                        convergence_table.set_precision(ed_problem.L1_names[i], 8);
+                        convergence_table.set_scientific(ed_problem.L1_names[i], true);
+                    }
+                    
+                    for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                    {
+                        convergence_table.set_precision(ed_problem.L2_names[i], 8);
+                        convergence_table.set_scientific(ed_problem.L2_names[i], true);
+                    }
+                    
+                        //convergence_table.set_tex_caption("cells", "\\# cells");
+                        //convergence_table.set_tex_caption("dofs", "\\# dofs");
+                        //convergence_table.set_tex_caption("L2", "$L^2-error$");
+                    
+                        //omiting columns that do not need a convergence rate calculated
+                    convergence_table.omit_column_from_convergence_rate_evaluation("nx");
+                    convergence_table.omit_column_from_convergence_rate_evaluation("cells");
+                    convergence_table.omit_column_from_convergence_rate_evaluation("dofs");
+                    
+                        //calculating the convergence rates for the L1, L2 norms for each refinement mesh
+                    for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                        convergence_table.evaluate_convergence_rates(ed_problem.L1_names[i],
+                                                                     dealii::ConvergenceTable::reduction_rate_log2);
+                    
+                    for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                        convergence_table.evaluate_convergence_rates(ed_problem.L2_names[i],
+                                                                     dealii::ConvergenceTable::reduction_rate_log2);
+                    
+                }//last mesh at constant polynomial order
+                
+            }//k
+            
+                //print the convergence to the file:
+            std::string fileName = "./" + time_integrator + "Convergence_d2_p" + sp[j] + ".dat";
+            std::fstream fp;
+            fp.open(fileName.c_str(), std::ios::out);
+            convergence_table.write_text(fp);
+            convergence_table.write_text(std::cout);
+            fp.close();
+            
+        }//j
 
     }
     catch (std::exception &exc)

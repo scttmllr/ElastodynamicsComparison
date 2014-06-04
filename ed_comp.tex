@@ -267,7 +267,7 @@ The trapezoidal rule, also known as the average acceleration
 method, is a member of the Newmark family of integration schemes.  
 It is conditionally stable and second order accurate \cite{Hughes2012}.
 The parameters $\beta=1/6$ and $\gamma=1/2$ in \eqref{eq:NewmarkMethod}
-to obtain the trapezoidal rule.
+to obtain the linear acceleration method.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Central difference
@@ -282,8 +282,13 @@ U^{n+1} &=& U^n + (\Delta t)\dot{U}^n + \frac{(\Delta t)^2}{2}\ddot{U}^n,
 %
 \\
 %
-\dot{U}^{n+1} &=& \frac{2}{\Delta t}\left[\inverse{M_L}(F^{n+1}-KU^{n+1})+\ddot{U}^n\right]
-+\dot{U}^n.
+\ddot{U}^{n+1} &=& \inverse{(M_L)}(F^{n+1}-KU^{n+1}),
+%
+\\
+%
+\dot{U}^{n+1} &=& \dot{U}^n + \frac{\Delta t}{2}\left( \ddot{U}^{n+1} + \ddot{U}^n\right).
+%\frac{2}{\Delta t}\left[\inverse{M_L}(F^{n+1}-KU^{n+1})+\ddot{U}^n\right]
+%+\dot{U}^n.
 \end{eqnarray}
 
 Note:  CDF is also known as explicit Newmark as well as velocity-Verlet.

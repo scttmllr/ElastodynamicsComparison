@@ -93,17 +93,17 @@ private:
 	SparseMatrix<double> system_matrix;
 	SparseMatrix<double> consistent_mass_matrix;
 	SparseMatrix<double> stiffness_matrix;
-	SparseMatrix<double> inverse_system_matrix;
+//	SparseMatrix<double> inverse_system_matrix;
 	
 	// For lumped mass matrices, only need to store
 	// the diagonals; hence we just use a vector
-	Vector<double> lumped_mass_matrix;
-	Vector<double> inverse_lumped_mass_matrix;
+//	Vector<double> lumped_mass_matrix;
+//	Vector<double> inverse_lumped_mass_matrix;
     
     // Vectors for the RHS of the linear system,
     // as well as solutions
     Vector<double> system_rhs;
-    Vector<double> solution, old_solution, old_velocity;
+    Vector<double> solution, old_solution, old_velocity, old_acceleration;
     
         // Temp vector for doing linear combinations of Vectors
     Vector<double> linear_combo;
@@ -176,6 +176,7 @@ void ElasticProblem<dim>::setup_system ()
     solution.reinit(dof_handler.n_dofs());
     old_solution.reinit(dof_handler.n_dofs());
     old_velocity.reinit(dof_handler.n_dofs());
+    old_acceleration.reinit(dof_handler.n_dofs());
     linear_combo.reinit(dof_handler.n_dofs());
     
     this->n_dofs = dof_handler.n_dofs();
@@ -548,7 +549,7 @@ void ElasticProblem<dim>::compute_errors(void)
     
     for(unsigned int i=0; i<L2_error.size(); ++i)
         L2_error[i] = std::sqrt(L2_error[i]);
-    
+	
 }//compute_errors
 
 template <int dim>
@@ -581,10 +582,28 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.25;
+    double cfl = 0.05;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
+    
+    // Set parameters for the generalized alpha method:
+    double rhoInf = 0.25;
+    double a_f = rhoInf/(1.+rhoInf);
+    double a_m = (2.*rhoInf-1.)/(1.+rhoInf);
+    double beta = (1.-a_m+a_f)*(1.-a_m+a_f)/4.;
+    double gamma = 0.5 - a_m + a_f;
+    
+    a_f=0.;
+    a_m=0.;
+    beta=1./6.;
+    gamma = 0.5;
+    
+    // Store some coefficients:
+    double a1 = (1.-a_m)/(beta*delta_t*delta_t);
+    double a2 = (1.-a_f);
+    double a3 = (1.-a_m)/(beta*delta_t);
+    double a4 = (1.-a_m-2.*beta)/(2.*beta);
     
     std::cout << "\n Wave speed:      cd = " << cd(dim);
     std::cout << "\n Mesh size:       h  = " << h;
@@ -604,6 +623,10 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
                              ExactSolutionTimeDerivative<dim>(dim, current_time),
                              old_velocity);
     
+    VectorTools::interpolate(dof_handler,
+                             ExactSolutionSecondTimeDerivative<dim>(dim, current_time),
+                             old_acceleration);
+    
     for(unsigned int step=0; step<n_timesteps; ++step)
     {
         current_time += delta_t;
@@ -614,33 +637,52 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         
         computing_timer.enter_section("Assemble matrices");
         assemble_implicit_system();
+        system_matrix = 0.;
+        system_matrix.add(a1,consistent_mass_matrix);
+        system_matrix.add(a2,stiffness_matrix);
         computing_timer.exit_section();
         
         computing_timer.enter_section("Compute RHS");
+        
+        linear_combo = 0.0;
+        linear_combo.add(a1, old_solution);
+        linear_combo.add(a3, old_velocity);
+        linear_combo.add(a4, old_acceleration);
+        
         system_rhs = 0.0;
-        linear_combo = old_solution;
-        linear_combo *= inv_dt;
-        linear_combo += old_velocity;
-        
         consistent_mass_matrix.vmult(system_rhs, linear_combo);
-        system_rhs *= inv_dt;
         
-        system_matrix = 0.;
-        system_matrix.add(inv_dt*inv_dt,consistent_mass_matrix);
-        system_matrix.add(1.0,stiffness_matrix);
+//        linear_combo = 0.0;
+//        stiffness_matrix.vmult(linear_combo, old_solution);
+//        linear_combo *= (-1.*a_f);
+//        system_rhs += linear_combo;
+    
         computing_timer.exit_section();//Compute RHS
         
         computing_timer.enter_section("Linear solve");
+        {
         SparseDirectUMFPACK directSolver;
         directSolver.initialize (system_matrix);
         directSolver.vmult (solution, system_rhs);
-        
         constraints.distribute (solution);
-        computing_timer.exit_section();//Linear solve
+        }
         
-        old_velocity = solution;
-        old_velocity -= old_solution;
-        old_velocity *= inv_dt;
+        computing_timer.exit_section();//Linear solve
+    
+        
+            // Set the "old" velocity and acceleration
+            // for use in the next timestep
+        linear_combo = old_acceleration;
+        
+        old_acceleration = solution;// u^{N+1}
+        old_acceleration -= old_solution;// u^{N}
+        old_acceleration.add(-delta_t, old_velocity);// udot^{N}
+        old_acceleration *= (2.*inv_dt*inv_dt);
+        old_acceleration.add(2.*beta-1.,linear_combo);// uddot^N
+        old_acceleration *= 1./(2.*beta);
+        
+        old_velocity.add(delta_t*(1-gamma), linear_combo);
+        old_velocity.add(delta_t*gamma, old_acceleration);
     }
     
         // Total run time section
@@ -651,9 +693,8 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         // is stored in "old_solution"
     
         // Create the velocity vector:
-        // For Backward Euler:
+        // For generalized alpha:
     old_solution = old_velocity;
-   
     compute_errors();
 	
         // Output the results
@@ -680,15 +721,15 @@ int main ()
         //std::string sp[5] = {"1", "2", "5"};
     std::string sp[5] = {"1", "2", "3", "4", "5"};
         
-    std::string time_integrator = "BackwardEuler";
-        
+    std::string time_integrator = "LinAccel";
+
     for(int j=0; j<np; ++j)
     {
             // Create a convergence table
             // for each polynomial order:
         dealii::ConvergenceTable	convergence_table;
         
-        nh=7;
+//        for(int k=0; k<nh; ++k)
         for(int k=3; k<nh; ++k)
         {
             std::string fileName = "./" + time_integrator + "_Timing_d1_p" + sp[j] + "_h" + snx[k] + ".dat";
@@ -764,13 +805,13 @@ int main ()
             // dim = 2
             // Copy from above and change the template parameter on the ed_problem<dim>
             // Note that the k-loop should not go through 9, maybe 7?
-        if(false)
         for(int j=0; j<np; ++j)
         {
                 // Create a convergence table
                 // for each polynomial order:
             dealii::ConvergenceTable	convergence_table;
             
+                //        for(int k=0; k<nh; ++k)
             for(int k=3; k<(nh-2); ++k)
             {
                 std::string fileName = "./" + time_integrator + "_Timing_d2_p" + sp[j] + "_h" + snx[k] + ".dat";
@@ -838,6 +879,7 @@ int main ()
             std::fstream fp;
             fp.open(fileName.c_str(), std::ios::out);
             convergence_table.write_text(fp);
+            convergence_table.write_text(std::cout);
             fp.close();
             
         }//j

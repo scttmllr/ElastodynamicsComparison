@@ -625,6 +625,9 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         
         computing_timer.enter_section("Assemble matrices");
         assemble_implicit_system();
+        system_matrix = 0.;
+        system_matrix.add(16.*inv_dt*inv_dt,consistent_mass_matrix);
+        system_matrix.add(1.0,stiffness_matrix);
         computing_timer.exit_section();
         
         computing_timer.enter_section("Compute RHS");
@@ -637,9 +640,6 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         
         consistent_mass_matrix.vmult(system_rhs, linear_combo);
         
-        system_matrix = 0.;
-        system_matrix.add(16.*inv_dt*inv_dt,consistent_mass_matrix);
-        system_matrix.add(1.0,stiffness_matrix);
         computing_timer.exit_section();//Compute RHS
         
         computing_timer.enter_section("Linear solve");
@@ -663,6 +663,9 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         
         computing_timer.enter_section("Assemble matrices");
         assemble_implicit_system();
+        system_matrix = 0.;
+        system_matrix.add(9.*inv_dt*inv_dt,consistent_mass_matrix);
+        system_matrix.add(1.0,stiffness_matrix);
         computing_timer.exit_section();
         
         computing_timer.enter_section("Compute RHS");
@@ -676,9 +679,6 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         
         consistent_mass_matrix.vmult(system_rhs, linear_combo);
         
-        system_matrix = 0.;
-        system_matrix.add(9.*inv_dt*inv_dt,consistent_mass_matrix);
-        system_matrix.add(1.0,stiffness_matrix);
         computing_timer.exit_section();//Compute RHS
         
         computing_timer.enter_section("Linear solve");

@@ -103,7 +103,7 @@ private:
     // Vectors for the RHS of the linear system,
     // as well as solutions
     Vector<double> system_rhs;
-    Vector<double> solution, old_solution, old_velocity;
+    Vector<double> solution, old_solution, old_velocity, old_acceleration;
     
         // Temp vector for doing linear combinations of Vectors
     Vector<double> linear_combo;
@@ -168,15 +168,21 @@ void ElasticProblem<dim>::setup_system ()
 	
 	
 	system_matrix.reinit (sparsity_pattern);
-    consistent_mass_matrix.reinit (sparsity_pattern);
-    stiffness_matrix.reinit (sparsity_pattern);
+//    consistent_mass_matrix.reinit (sparsity_pattern);
+//    stiffness_matrix.reinit (sparsity_pattern);
     
     system_rhs.reinit(dof_handler.n_dofs());
     
     solution.reinit(dof_handler.n_dofs());
     old_solution.reinit(dof_handler.n_dofs());
     old_velocity.reinit(dof_handler.n_dofs());
+    old_acceleration.reinit(dof_handler.n_dofs());
     linear_combo.reinit(dof_handler.n_dofs());
+    
+        // For explicit problems
+    lumped_mass_matrix.reinit(dof_handler.n_dofs());
+    inverse_lumped_mass_matrix.reinit(dof_handler.n_dofs());
+    
     
     this->n_dofs = dof_handler.n_dofs();
     this->n_cells = triangulation.n_active_cells();
@@ -185,12 +191,11 @@ void ElasticProblem<dim>::setup_system ()
 
 
 template <int dim>
-void ElasticProblem<dim>::assemble_implicit_system ()
+void ElasticProblem<dim>::assemble_explicit_system ()
 {
     // Zero matrices and vectors
-    consistent_mass_matrix = 0.;
-    stiffness_matrix = 0.;
     system_rhs = 0.;
+    lumped_mass_matrix = 0.;
     
         // Create an identity tensor:
     Tensor<2,dim> Id;
@@ -208,9 +213,9 @@ void ElasticProblem<dim>::assemble_implicit_system ()
 
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     const unsigned int   n_q_points    = quadrature_formula.size();
-
-    FullMatrix<double>   cell_mass (dofs_per_cell, dofs_per_cell);
-    FullMatrix<double>   cell_stiffness (dofs_per_cell, dofs_per_cell);
+    
+    Vector<double> cell_lumped_mass(dofs_per_cell);
+    Vector<double> cell_rhs(dofs_per_cell);
 
     std::vector<unsigned int> local_dof_indices (dofs_per_cell);
 
@@ -223,14 +228,17 @@ void ElasticProblem<dim>::assemble_implicit_system ()
     double m=mu(dim);
     
     double trE;
-    Tensor<2,dim> w_j, E, Stress;
-
+    Tensor<2,dim> E, Stress;
+    std::vector<Tensor<2,dim> > grad_u(n_q_points);
+    
     for (; cell!=endc; ++cell)
  	{
- 		cell_mass = 0;
-        cell_stiffness = 0;
+ 		cell_lumped_mass = 0;
+        cell_rhs = 0;
  		
  		fe_values.reinit (cell);
+        
+        fe_values[disp].get_function_gradients(old_solution, grad_u);
  		
  		for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
  		{
@@ -238,36 +246,35 @@ void ElasticProblem<dim>::assemble_implicit_system ()
  			{
  				for (unsigned int j=0; j<dofs_per_cell; ++j)
  				{
-                        // Compute the stress from the shape function:
-                        // Linearized strain tensor:
-                    E = 0.5 * (fe_values[disp].gradient(j,q_point)
-                               + transpose(fe_values[disp].gradient(j,q_point) ) );
-                    
-                    trE = 0.0;
-                    for(int d=0; d<dim; ++d)
-                        trE += E[d][d];
-
-                    Stress = Id;
-                    Stress *= (l*trE);
-                    Stress += (2.0*m)*E;
-                    
                         // Assemble the local matrices
- 					cell_mass(i,j) += rho * fe_values[disp].value(i,q_point) *
+ 					cell_lumped_mass(i) += rho * fe_values[disp].value(i,q_point) *
                                     fe_values[disp].value(j,q_point) *
                                     fe_values.JxW(q_point);
- 					
- 					cell_stiffness(i,j) += scalar_product(fe_values[disp].gradient(i,q_point),
-                                    Stress) * fe_values.JxW(q_point);
  				}//j
+                
+                
+                    // Assemble cell RHS from stress:
+                // Compute the stress from the shape function:
+                // Linearized strain tensor:
+                E = 0.5*(grad_u[q_point] + transpose(grad_u[q_point]));
+                trE = 0.0;
+                for(int d=0; d<dim; ++d)
+                    trE += E[d][d];
+                
+                Stress = Id;
+                Stress *= (l*trE);
+                Stress += (2.0*m)*E;
+                
+                cell_rhs(i) -= scalar_product(fe_values[disp].gradient(i,q_point), Stress) * fe_values.JxW(q_point);
  			}//i
  		}//q_point
  		
     cell->get_dof_indices (local_dof_indices);
 
        // Assemble the local matrices into the global system:
-    constraints.distribute_local_to_global(cell_mass, local_dof_indices, consistent_mass_matrix);
+    constraints.distribute_local_to_global(cell_lumped_mass, local_dof_indices, lumped_mass_matrix);
 
-    constraints.distribute_local_to_global(cell_stiffness, local_dof_indices, stiffness_matrix);
+    constraints.distribute_local_to_global(cell_rhs, local_dof_indices, system_rhs);
  		
  	}//cell
 
@@ -581,7 +588,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.25;
+    double cfl = 0.01;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
@@ -604,6 +611,10 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
                              ExactSolutionTimeDerivative<dim>(dim, current_time),
                              old_velocity);
     
+    VectorTools::interpolate(dof_handler,
+                             ExactSolutionSecondTimeDerivative<dim>(dim, current_time),
+                             old_acceleration);
+    
     for(unsigned int step=0; step<n_timesteps; ++step)
     {
         current_time += delta_t;
@@ -612,35 +623,39 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         old_solution = solution;
         solution = 0.;
         
+            // Compute solution at t^{n+1}
+        solution.add(delta_t, old_velocity);
+        solution.add(0.5*delta_t*delta_t, old_acceleration);
+        constraints.distribute (solution);
+        
         computing_timer.enter_section("Assemble matrices");
-        assemble_implicit_system();
+        assemble_explicit_system();
         computing_timer.exit_section();
         
-        computing_timer.enter_section("Compute RHS");
-        system_rhs = 0.0;
-        linear_combo = old_solution;
-        linear_combo *= inv_dt;
-        linear_combo += old_velocity;
+//        computing_timer.enter_section("Compute RHS");
         
-        consistent_mass_matrix.vmult(system_rhs, linear_combo);
-        system_rhs *= inv_dt;
-        
-        system_matrix = 0.;
-        system_matrix.add(inv_dt*inv_dt,consistent_mass_matrix);
-        system_matrix.add(1.0,stiffness_matrix);
-        computing_timer.exit_section();//Compute RHS
+//        computing_timer.exit_section();//Compute RHS
         
         computing_timer.enter_section("Linear solve");
-        SparseDirectUMFPACK directSolver;
-        directSolver.initialize (system_matrix);
-        directSolver.vmult (solution, system_rhs);
         
-        constraints.distribute (solution);
+            // system_rhs now = -K*U^{n+1}
+            // old_solution vector is not needed, so we use
+            // it as temporary storage
+        for(unsigned int dof=0; dof<dof_handler.n_dofs(); ++dof)
+        {
+                // old_solution = \ddot{U}^{n+1}
+            old_solution[dof] = system_rhs[dof]/lumped_mass_matrix[dof];
+        }
+        
+            // Update the velocity:
+        old_velocity.add(0.5*delta_t, old_acceleration);
+        old_velocity.add(0.5*delta_t, old_solution);
+        constraints.distribute (old_velocity);
+        
+            // And now store the old_acceleration properly
+        old_acceleration = old_solution;
+        
         computing_timer.exit_section();//Linear solve
-        
-        old_velocity = solution;
-        old_velocity -= old_solution;
-        old_velocity *= inv_dt;
     }
     
         // Total run time section
@@ -651,13 +666,13 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         // is stored in "old_solution"
     
         // Create the velocity vector:
-        // For Backward Euler:
+        // For CDF:
     old_solution = old_velocity;
-   
+    
     compute_errors();
 	
         // Output the results
-	//output_results (n_timesteps, time_integrator);
+//	output_results (n_timesteps, time_integrator);
 	
 }
     
@@ -680,15 +695,14 @@ int main ()
         //std::string sp[5] = {"1", "2", "5"};
     std::string sp[5] = {"1", "2", "3", "4", "5"};
         
-    std::string time_integrator = "BackwardEuler";
-        
+    std::string time_integrator = "CDF";
+
     for(int j=0; j<np; ++j)
     {
             // Create a convergence table
             // for each polynomial order:
         dealii::ConvergenceTable	convergence_table;
-        
-        nh=7;
+
         for(int k=3; k<nh; ++k)
         {
             std::string fileName = "./" + time_integrator + "_Timing_d1_p" + sp[j] + "_h" + snx[k] + ".dat";
@@ -764,7 +778,6 @@ int main ()
             // dim = 2
             // Copy from above and change the template parameter on the ed_problem<dim>
             // Note that the k-loop should not go through 9, maybe 7?
-        if(false)
         for(int j=0; j<np; ++j)
         {
                 // Create a convergence table
@@ -838,6 +851,7 @@ int main ()
             std::fstream fp;
             fp.open(fileName.c_str(), std::ios::out);
             convergence_table.write_text(fp);
+            convergence_table.write_text(std::cout);
             fp.close();
             
         }//j
