@@ -176,6 +176,7 @@ void ElasticProblem<dim>::setup_system ()
     solution.reinit(dof_handler.n_dofs());
     old_solution.reinit(dof_handler.n_dofs());
     old_velocity.reinit(dof_handler.n_dofs());
+    old_acceleration.reinit(dof_handler.n_dofs());
     linear_combo.reinit(dof_handler.n_dofs());
     
         // For explicit problems
@@ -264,16 +265,21 @@ void ElasticProblem<dim>::assemble_explicit_system ()
                 Stress *= (l*trE);
                 Stress += (2.0*m)*E;
                 
-                cell_rhs(i) -= scalar_product(fe_values[disp].gradient(i,q_point), Stress) * fe_values.JxW(q_point);
+                cell_rhs(i) -= scalar_product(fe_values[disp].gradient(i,q_point), Stress)
+                            * fe_values.JxW(q_point);
  			}//i
  		}//q_point
  		
     cell->get_dof_indices (local_dof_indices);
 
        // Assemble the local matrices into the global system:
-    constraints.distribute_local_to_global(cell_lumped_mass, local_dof_indices, lumped_mass_matrix);
-
-    constraints.distribute_local_to_global(cell_rhs, local_dof_indices, system_rhs);
+//    constraints.distribute_local_to_global(cell_lumped_mass, local_dof_indices, lumped_mass_matrix);
+//    constraints.distribute_local_to_global(cell_rhs, local_dof_indices, system_rhs);
+        for(unsigned int i=0; i<dofs_per_cell; ++i)
+        {
+            lumped_mass_matrix(local_dof_indices[i]) += cell_lumped_mass[i];
+            system_rhs(local_dof_indices[i]) += cell_rhs[i];
+        }
  		
  	}//cell
 
@@ -587,7 +593,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.25;
+    double cfl = 0.1;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
@@ -611,6 +617,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
 	VectorTools::interpolate(dof_handler,
                              ExactSolution<dim>(dim, current_time),
                              solution);
+    constraints.distribute(solution);
     
     VectorTools::interpolate(dof_handler,
                              ExactSolutionTimeDerivative<dim>(dim, current_time),
@@ -619,6 +626,9 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     VectorTools::interpolate(dof_handler,
                              ExactSolutionSecondTimeDerivative<dim>(dim, current_time),
                              old_acceleration);
+    
+    constraints.distribute(solution);
+    constraints.distribute(old_velocity);
     
     for(unsigned int step=0; step<n_timesteps; ++step)
     {
@@ -638,23 +648,38 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         
         computing_timer.enter_section("Linear solve");
         
-        system_rhs *= delta_t*delta_t;
-        
+            // First compute \ddot{U}^{n+1} and store in
+            // the temp `linear_combo`
         for(unsigned int dof=0; dof<dof_handler.n_dofs(); ++dof)
         {
-            solution[dof] = system_rhs[dof]/lumped_mass_matrix[dof];
+            linear_combo[dof] = system_rhs[dof]/lumped_mass_matrix[dof];
         }
         
-        solution += old_solution;
-        old_velocity *= delta_t;
-        solution += old_velocity;
+        linear_combo.add(-a_m, old_acceleration);
+        linear_combo *= 1./(1.-a_m);
         
-        constraints.distribute (solution);
+            // Next compute U^{n+1}
+        solution = old_solution;
+        solution.add(delta_t, old_velocity);
+        
+        double tmp = 0.5*delta_t*delta_t*(1.-2.*beta);
+        solution.add(tmp, old_acceleration);
+        tmp = 0.5*delta_t*delta_t*(2.*beta);
+        solution.add(tmp, linear_combo);
+        
+        constraints.distribute(solution);
+        
+            // Compute \dot{U}^{n+1}
+        old_velocity.add(delta_t*(1.-gamma), old_acceleration);
+        old_velocity.add(delta_t*gamma, linear_combo);
+        
+        constraints.distribute(old_velocity);
+        
+            // Store the acceleration:
+        old_acceleration = linear_combo;
+        
         computing_timer.exit_section();//Linear solve
         
-        old_velocity = solution;
-        old_velocity -= old_solution;
-        old_velocity *= inv_dt;
     }
     
         // Total run time section
@@ -666,7 +691,8 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     
         // Create the velocity vector:
         // For Backward Euler:
-    old_solution -= old_velocity;
+    old_solution = old_velocity;
+    
     compute_errors();
 	
         // Output the results
@@ -683,7 +709,7 @@ int main ()
 {
     try
     {
-    int np=5, nh=9;
+    int np=3, nh=7;
 
     int nx[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
             //int p[5] = {1, 2, 5};
@@ -695,15 +721,13 @@ int main ()
         
     std::string time_integrator = "ExpGenAlpha";
 
-        np=2;
     for(int j=0; j<np; ++j)
     {
             // Create a convergence table
             // for each polynomial order:
         dealii::ConvergenceTable	convergence_table;
         
-        nh=6;
-        for(int k=3; k<nh; ++k)
+        for(int k=0; k<nh; ++k)
         {
             std::string fileName = "./" + time_integrator + "_Timing_d1_p" + sp[j] + "_h" + snx[k] + ".dat";
             std::fstream timing_stream;
@@ -778,14 +802,13 @@ int main ()
             // dim = 2
             // Copy from above and change the template parameter on the ed_problem<dim>
             // Note that the k-loop should not go through 9, maybe 7?
-        if(false)
         for(int j=0; j<np; ++j)
         {
                 // Create a convergence table
                 // for each polynomial order:
             dealii::ConvergenceTable	convergence_table;
             
-            for(int k=3; k<(nh-2); ++k)
+            for(int k=0; k<(nh-2); ++k)
             {
                 std::string fileName = "./" + time_integrator + "_Timing_d2_p" + sp[j] + "_h" + snx[k] + ".dat";
                 std::fstream timing_stream;

@@ -604,6 +604,9 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
                              ExactSolutionTimeDerivative<dim>(dim, current_time),
                              old_velocity);
     
+    constraints.distribute (solution);
+    constraints.distribute (old_velocity);
+    
     for(unsigned int step=0; step<n_timesteps; ++step)
     {
         current_time += delta_t;
@@ -670,7 +673,7 @@ int main ()
 {
     try
     {
-    int np=5, nh=9;
+    int np=3, nh=7;
 
     int nx[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
             //int p[5] = {1, 2, 5};
@@ -681,15 +684,14 @@ int main ()
     std::string sp[5] = {"1", "2", "3", "4", "5"};
         
     std::string time_integrator = "BackwardEuler";
-        
+
     for(int j=0; j<np; ++j)
     {
             // Create a convergence table
             // for each polynomial order:
         dealii::ConvergenceTable	convergence_table;
         
-        nh=7;
-        for(int k=3; k<nh; ++k)
+        for(int k=0; k<nh; ++k)
         {
             std::string fileName = "./" + time_integrator + "_Timing_d1_p" + sp[j] + "_h" + snx[k] + ".dat";
             std::fstream timing_stream;
@@ -764,14 +766,13 @@ int main ()
             // dim = 2
             // Copy from above and change the template parameter on the ed_problem<dim>
             // Note that the k-loop should not go through 9, maybe 7?
-        if(false)
         for(int j=0; j<np; ++j)
         {
                 // Create a convergence table
                 // for each polynomial order:
             dealii::ConvergenceTable	convergence_table;
             
-            for(int k=3; k<(nh-2); ++k)
+            for(int k=0; k<(nh-2); ++k)
             {
                 std::string fileName = "./" + time_integrator + "_Timing_d2_p" + sp[j] + "_h" + snx[k] + ".dat";
                 std::fstream timing_stream;

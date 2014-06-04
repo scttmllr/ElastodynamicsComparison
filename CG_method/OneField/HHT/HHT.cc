@@ -582,7 +582,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.05;
+    double cfl = 0.25;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
@@ -621,6 +621,9 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     VectorTools::interpolate(dof_handler,
                              ExactSolutionSecondTimeDerivative<dim>(dim, current_time),
                              old_acceleration);
+    
+    constraints.distribute (solution);
+    constraints.distribute (old_velocity);
     
     for(unsigned int step=0; step<n_timesteps; ++step)
     {
@@ -678,6 +681,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         
         old_velocity.add(delta_t*(1-gamma), linear_combo);
         old_velocity.add(delta_t*gamma, old_acceleration);
+        constraints.distribute (old_velocity);
     }
     
         // Total run time section
@@ -706,7 +710,7 @@ int main ()
 {
     try
     {
-    int np=5, nh=9;
+    int np=3, nh=7;
 
     int nx[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
             //int p[5] = {1, 2, 5};
@@ -724,8 +728,7 @@ int main ()
             // for each polynomial order:
         dealii::ConvergenceTable	convergence_table;
         
-//        for(int k=0; k<nh; ++k)
-        for(int k=3; k<nh; ++k)
+        for(int k=0; k<nh; ++k)
         {
             std::string fileName = "./" + time_integrator + "_Timing_d1_p" + sp[j] + "_h" + snx[k] + ".dat";
             std::fstream timing_stream;
@@ -807,7 +810,7 @@ int main ()
             dealii::ConvergenceTable	convergence_table;
             
                 //        for(int k=0; k<nh; ++k)
-            for(int k=3; k<(nh-2); ++k)
+            for(int k=0; k<(nh-2); ++k)
             {
                 std::string fileName = "./" + time_integrator + "_Timing_d2_p" + sp[j] + "_h" + snx[k] + ".dat";
                 std::fstream timing_stream;

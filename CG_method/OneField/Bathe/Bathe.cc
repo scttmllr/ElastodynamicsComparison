@@ -582,7 +582,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.05;
+    double cfl = 0.25;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
@@ -612,6 +612,9 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     VectorTools::interpolate(dof_handler,
                              ExactSolutionSecondTimeDerivative<dim>(dim, current_time),
                              old_acceleration);
+    
+    constraints.distribute (solution);
+    constraints.distribute (old_velocity);
     
     for(unsigned int step=0; step<n_timesteps; ++step)
     {
@@ -657,6 +660,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         mid_Udot.add(-1., old_velocity);
         mid_Udot.add(4.*inv_dt, mid_U);
         mid_Udot.add(-4.*inv_dt, old_solution);
+        constraints.distribute (mid_Udot);
         
             // Step 2:  BDF2
         current_time += delta_t/2.;
@@ -701,6 +705,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         old_velocity.add(3.*inv_dt, solution);// u^{N+1}
         old_velocity.add(-4.*inv_dt, mid_U);// u^{N+1/2}
         old_velocity.add(inv_dt, old_solution);// u^N
+        constraints.distribute (old_velocity);
         
         old_acceleration = 0.;
         old_acceleration.add(3.*inv_dt, old_velocity);// udot^{N+1}
@@ -734,7 +739,7 @@ int main ()
 {
     try
     {
-    int np=5, nh=9;
+    int np=3, nh=7;
 
     int nx[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
             //int p[5] = {1, 2, 5};
@@ -746,17 +751,15 @@ int main ()
         
     std::string time_integrator = "Bathe";
 
-        np=4;
     for(int j=0; j<np; ++j)
     {
             // Create a convergence table
             // for each polynomial order:
         dealii::ConvergenceTable	convergence_table;
         
-//        for(int k=0; k<nh; ++k)
-        for(int k=3; k<nh; ++k)
+        for(int k=0; k<nh; ++k)
         {
-            std::string fileName = "./" + time_integrator + "_Timing_p" + sp[j] + "_h" + snx[k] + ".dat";
+            std::string fileName = "./" + time_integrator + "_Timing_d1_p" + sp[j] + "_h" + snx[k] + ".dat";
             std::fstream timing_stream;
             timing_stream.open(fileName.c_str(), std::ios::out);
             
@@ -817,7 +820,7 @@ int main ()
         }//k
         
             //print the convergence to the file:
-        std::string fileName = "./" + time_integrator + "Convergence_p" + sp[j] + ".dat";
+        std::string fileName = "./" + time_integrator + "Convergence_d1_p" + sp[j] + ".dat";
         std::fstream fp;
         fp.open(fileName.c_str(), std::ios::out);
         convergence_table.write_text(fp);
@@ -829,7 +832,83 @@ int main ()
             // dim = 2
             // Copy from above and change the template parameter on the ed_problem<dim>
             // Note that the k-loop should not go through 9, maybe 7?
-
+        for(int j=0; j<np; ++j)
+        {
+                // Create a convergence table
+                // for each polynomial order:
+            dealii::ConvergenceTable	convergence_table;
+            
+            for(int k=0; k<(nh-2); ++k)
+            {
+                std::string fileName = "./" + time_integrator + "_Timing_d2_p" + sp[j] + "_h" + snx[k] + ".dat";
+                std::fstream timing_stream;
+                timing_stream.open(fileName.c_str(), std::ios::out);
+                
+                
+                ContinuousGalerkin::ElasticProblem<2> ed_problem(p[j], false, timing_stream);
+                ed_problem.run (time_integrator, nx[k]);
+                
+                timing_stream.close();
+                
+                convergence_table.add_value("nx", nx[k]);
+                convergence_table.add_value("cells", ed_problem.n_cells);
+                convergence_table.add_value("dofs", ed_problem.n_dofs);
+                
+                for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                    convergence_table.add_value(ed_problem.L1_names[i], ed_problem.L1_error[i]);
+                
+                for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                    convergence_table.add_value(ed_problem.L2_names[i], ed_problem.L2_error[i]);
+                
+                    // Hack:  Rather than copying all of the relevant info, I will just do the
+                    // following stuff after the most refined mesh has been solved:
+                if( (k+1)==nh)
+                {
+                        //format the error table
+                    
+                    for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                    {
+                        convergence_table.set_precision(ed_problem.L1_names[i], 8);
+                        convergence_table.set_scientific(ed_problem.L1_names[i], true);
+                    }
+                    
+                    for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                    {
+                        convergence_table.set_precision(ed_problem.L2_names[i], 8);
+                        convergence_table.set_scientific(ed_problem.L2_names[i], true);
+                    }
+                    
+                        //convergence_table.set_tex_caption("cells", "\\# cells");
+                        //convergence_table.set_tex_caption("dofs", "\\# dofs");
+                        //convergence_table.set_tex_caption("L2", "$L^2-error$");
+                    
+                        //omiting columns that do not need a convergence rate calculated
+                    convergence_table.omit_column_from_convergence_rate_evaluation("nx");
+                    convergence_table.omit_column_from_convergence_rate_evaluation("cells");
+                    convergence_table.omit_column_from_convergence_rate_evaluation("dofs");
+                    
+                        //calculating the convergence rates for the L1, L2 norms for each refinement mesh
+                    for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                        convergence_table.evaluate_convergence_rates(ed_problem.L1_names[i],
+                                                                     dealii::ConvergenceTable::reduction_rate_log2);
+                    
+                    for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                        convergence_table.evaluate_convergence_rates(ed_problem.L2_names[i],
+                                                                     dealii::ConvergenceTable::reduction_rate_log2);
+                    
+                }//last mesh at constant polynomial order
+                
+            }//k
+            
+                //print the convergence to the file:
+            std::string fileName = "./" + time_integrator + "Convergence_d2_p" + sp[j] + ".dat";
+            std::fstream fp;
+            fp.open(fileName.c_str(), std::ios::out);
+            convergence_table.write_text(fp);
+            convergence_table.write_text(std::cout);
+            fp.close();
+            
+        }//j
     }
     catch (std::exception &exc)
     {
