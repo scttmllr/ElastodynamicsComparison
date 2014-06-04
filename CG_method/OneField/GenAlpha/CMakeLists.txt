@@ -3,7 +3,7 @@
 ##
 
 # Set the name of the project and target:
-SET(TARGET "BackwardEuler")
+SET(TARGET "GenAlpha")
 
 # Declare all source files the target consists of:
 SET(TARGET_SRC

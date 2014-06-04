@@ -303,6 +303,20 @@ M \left[ (1-\alpha_m) \ddot{U}^{n+1} + \alpha_m \ddot{U}^n \right]
 + K \left[ (1-\alpha_f) {U}^{n+1} + \alpha_f {U}^n\right]
 = (1-\alpha_f)F^{n+1} + \alpha_f F^n.
 \end{equation}
+%
+Substituting the time derivative formulae from the Newmark methods into \eqref{eq:GenAlpha},
+we arrive at the following discrete equation:
+\begin{multline}
+\left[  \frac{1-\alpha_m}{\beta (\Delta t)^2} M + (1-\alpha_f)K \right] U^{n+1} =
+(1-\alpha_f)F^{n+1} + \alpha_f F^n - \alpha_f K U^n
+\\
++ M\left[ \frac{1-\alpha_m}{\beta (\Delta t)^2} U^n 
++ \frac{1-\alpha_m}{\beta (\Delta t)} \dot{U}^n
++  \frac{1-\alpha_m - 2\beta}{2\beta} \ddot{U}^n
+\right].
+\end{multline}
+
+
 Second order accuracy and unconditional stability are obtained
 if the following are satisfied:
 \begin{equation}

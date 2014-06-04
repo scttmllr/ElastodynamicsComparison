@@ -3,7 +3,7 @@
 ##
 
 # Set the name of the project and target:
-SET(TARGET "CG_one_field")
+SET(TARGET "Bathe")
 
 # Declare all source files the target consists of:
 SET(TARGET_SRC

@@ -549,18 +549,6 @@ void ElasticProblem<dim>::compute_errors(void)
     
     for(unsigned int i=0; i<L2_error.size(); ++i)
         L2_error[i] = std::sqrt(L2_error[i]);
-    
-    
-//    std::string fileName = "./output_d1/" + time_integrator + "_p" + sp[j] + "_h" + snx[k] + ".dat";
-//    std::fstream fp;
-//    fp.open(fileName.c_str(), std::ios::out);
-//    fp.precision(16);
-//    fp<<timer()<<'\n'<<timer.wall_time()<<'\n';
-//    for(int i=0; i<2; ++i)
-//        fp<<std::setprecision(16)<<ed_problem.L1_error[i]<<'\n';
-//    for(int i=0; i<2; ++i)
-//        fp<<std::setprecision(16)<<ed_problem.L2_error[i]<<'\n';
-//    fp.close();
 	
 }//compute_errors
 
@@ -728,13 +716,12 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         // is stored in "old_solution"
     
         // Create the velocity vector:
-        // For Backward Euler:
-    old_solution -= solution;
-    old_solution *= (-1.*inv_dt);
+        // For Bathe:
+    old_solution = old_velocity;
     compute_errors();
 	
         // Output the results
-	output_results (n_timesteps, time_integrator);
+	//output_results (n_timesteps, time_integrator);
 	
 }
     
