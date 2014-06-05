@@ -696,6 +696,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     old_solution = old_velocity;
     compute_errors();
 	
+    computing_timer.print_summary();
         // Output the results
 	//output_results (n_timesteps, time_integrator);
 	
