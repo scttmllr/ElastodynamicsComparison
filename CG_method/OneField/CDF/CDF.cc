@@ -420,14 +420,14 @@ void ElasticProblem<dim>::compute_errors(void)
         L1_names[6] = "L1_E_xy";
         L1_names[7] = "L1_energy";
         
-        L1_names[0] = "L2_u_x";
-        L1_names[1] = "L2_u_y";
-        L1_names[2] = "L2_v_x";
-        L1_names[3] = "L2_v_y";
-        L1_names[4] = "L2_E_xx";
-        L1_names[5] = "L2_E_yy";
-        L1_names[6] = "L2_E_xy";
-        L1_names[7] = "L2_energy";
+        L2_names[0] = "L2_u_x";
+        L2_names[1] = "L2_u_y";
+        L2_names[2] = "L2_v_x";
+        L2_names[3] = "L2_v_y";
+        L2_names[4] = "L2_E_xx";
+        L2_names[5] = "L2_E_yy";
+        L2_names[6] = "L2_E_xy";
+        L2_names[7] = "L2_energy";
     }
     
         // Create an identity tensor:
@@ -794,7 +794,7 @@ int main ()
                 // for each polynomial order:
             dealii::ConvergenceTable	convergence_table;
             
-            for(int k=0; k<(nh-2); ++k)
+            for(int k=0; k<(nh-1); ++k)
             {
                 std::string fileName = "./" + time_integrator + "_Timing_d2_p" + sp[j] + "_h" + snx[k] + ".dat";
                 std::fstream timing_stream;
@@ -802,7 +802,7 @@ int main ()
                 
                 
                 ContinuousGalerkin::ElasticProblem<2> ed_problem(p[j], false, timing_stream);
-                ed_problem.run (time_integrator, nx[k]);
+                ed_problem.run (time_integrator, nx[k], nx[k]);
                 
                 timing_stream.close();
                 
