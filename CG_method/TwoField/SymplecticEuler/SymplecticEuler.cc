@@ -107,7 +107,7 @@ private:
     // as well as solutions
     Vector<double> system_rhs;
     Vector<double> displacement, velocity;//, old_solution;//, old_velocity;
-    Vector<double> old_u, old_v;//
+    Vector<double> old_displacement, old_velocity;//
     
         // Temp vector for doing linear combinations of Vectors
 //    Vector<double> linear_combo;
@@ -694,7 +694,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
                              displacement);
     
     VectorTools::interpolate(dof_handler,
-                             ExactSolution<dim>(dim, current_time),
+                             ExactSolutionTimeDerivative<dim>(dim, current_time),
                              velocity);
                              
     constraints.distribute(displacement);
@@ -707,8 +707,8 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         old_displacement = displacement;
         old_velocity = velocity;
         
-        displacement = 0.;
-        velocity = 0.;
+//        displacement = 0.;
+//        velocity = 0.;
         
         computing_timer.enter_section("Assemble matrices");
         assemble_momentum_system();
@@ -722,6 +722,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
         {
             velocity[dof] += system_rhs[dof]/lumped_mass_matrix[dof];
         }
+        computing_timer.exit_section();
         
         computing_timer.enter_section("Assemble matrices");
         assemble_uv_system();
@@ -762,7 +763,7 @@ int main ()
 {
     try
     {
-    int np=2, nh=4;
+    int np=2, nh=6;
 
     int nx[9] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
             //int p[5] = {1, 2, 5};
@@ -772,7 +773,7 @@ int main ()
         //std::string sp[5] = {"1", "2", "5"};
     std::string sp[5] = {"1", "2", "3", "4", "5"};
         
-    std::string time_integrator = "ForwardEuler";
+    std::string time_integrator = "SymplecticEuler";
 
     for(int j=0; j<np; ++j)
     {
@@ -900,6 +901,14 @@ int main ()
                         convergence_table.set_precision(ed_problem.L2_names[i], 8);
                         convergence_table.set_scientific(ed_problem.L2_names[i], true);
                     }
+                    
+                    // Dump to a file:
+                    // polynomial order
+                    // nx
+                    // cells
+                    // dofs
+                    // L1 errors
+                    // L2 errors
                     
                         //convergence_table.set_tex_caption("cells", "\\# cells");
                         //convergence_table.set_tex_caption("dofs", "\\# dofs");
