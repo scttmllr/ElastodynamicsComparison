@@ -747,6 +747,34 @@ int main ()
             
             timing_stream.close();
             
+            {
+                // Dump to a file:
+                // polynomial order
+                // nx
+                // cells
+                // dofs
+                // L1 errors
+                // L2 errors
+                std::string fileName = "./" + time_integrator + "Errors_d1_p"
+                + sp[j] + "_N" + snx[k] + ".dat";
+                std::fstream fp;
+                fp.open(fileName.c_str(), std::ios::out);
+                fp << p[j] << std::endl;
+                fp << nx[k] << std::endl;
+                fp << ed_problem.n_cells << std::endl;
+                fp << ed_problem.n_dofs << std::endl;
+                
+                fp.precision(16);
+                
+                for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                    fp << ed_problem.L1_error[i] << std::endl;
+                
+                for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                    fp << ed_problem.L2_error[i] << std::endl;
+                
+                fp.close();
+            }
+            
             convergence_table.add_value("nx", nx[k]);
             convergence_table.add_value("cells", ed_problem.n_cells);
             convergence_table.add_value("dofs", ed_problem.n_dofs);
@@ -774,10 +802,6 @@ int main ()
                     convergence_table.set_precision(ed_problem.L2_names[i], 8);
                     convergence_table.set_scientific(ed_problem.L2_names[i], true);
                 }
-                
-                    //convergence_table.set_tex_caption("cells", "\\# cells");
-                    //convergence_table.set_tex_caption("dofs", "\\# dofs");
-                    //convergence_table.set_tex_caption("L2", "$L^2-error$");
                 
                     //omiting columns that do not need a convergence rate calculated
                 convergence_table.omit_column_from_convergence_rate_evaluation("nx");
@@ -829,6 +853,34 @@ int main ()
                 
                 timing_stream.close();
                 
+                {
+                    // Dump to a file:
+                    // polynomial order
+                    // nx
+                    // cells
+                    // dofs
+                    // L1 errors
+                    // L2 errors
+                    std::string fileName = "./" + time_integrator + "Errors_d2_p"
+                    + sp[j] + "_N" + snx[k] + ".dat";
+                    std::fstream fp;
+                    fp.open(fileName.c_str(), std::ios::out);
+                    fp << p[j] << std::endl;
+                    fp << nx[k] << std::endl;
+                    fp << ed_problem.n_cells << std::endl;
+                    fp << ed_problem.n_dofs << std::endl;
+                    
+                    fp.precision(16);
+                    
+                    for(unsigned int i=0; i<ed_problem.L1_error.size(); ++i)
+                        fp << ed_problem.L1_error[i] << std::endl;
+                    
+                    for(unsigned int i=0; i<ed_problem.L2_error.size(); ++i)
+                        fp << ed_problem.L2_error[i] << std::endl;
+                    
+                    fp.close();
+                }
+                
                 convergence_table.add_value("nx", nx[k]);
                 convergence_table.add_value("cells", ed_problem.n_cells);
                 convergence_table.add_value("dofs", ed_problem.n_dofs);
@@ -856,10 +908,6 @@ int main ()
                         convergence_table.set_precision(ed_problem.L2_names[i], 8);
                         convergence_table.set_scientific(ed_problem.L2_names[i], true);
                     }
-                    
-                        //convergence_table.set_tex_caption("cells", "\\# cells");
-                        //convergence_table.set_tex_caption("dofs", "\\# dofs");
-                        //convergence_table.set_tex_caption("L2", "$L^2-error$");
                     
                         //omiting columns that do not need a convergence rate calculated
                     convergence_table.omit_column_from_convergence_rate_evaluation("nx");
