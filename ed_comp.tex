@@ -442,6 +442,107 @@ of $\rho_b$ as
 \end{equation}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Two field CG
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Two-field continuous Galerkin formulation}
+
+Spatial discretization via continuous finite elements yield the semi-discrete equation
+\begin{equation}
+\label{eq:2f_EOM}
+M \dot{U} + K U  = F,
+\end{equation}
+where 
+\begin{equation}
+U = \transpose{[U \,\, V]},
+\end{equation}
+and the matrices are given by
+\begin{multline}
+\label{eq:2f_matrices}
+M = \left[
+\begin{array}{cc}
+\int_V \hat{u}_i \hat{u}_j \, dV & 0 \\
+0 & \int_V \hat{v}_i \rho \hat{v}_j \, dV
+\end{array}
+\right],
+\\
+K = \left[
+\begin{array}{cc}
+0 & - \int_V \hat{u}_i \hat{v}_j\, dV \\
+\int_V \nabla \hat{v}_i \mathbb{C} [\Sym(\nabla \hat{u}_j)] \, dV & 0
+\end{array}
+\right],
+\\
+F = \left[
+\begin{array}{c}
+0 \\
+\int_V  \hat{v}_i \rho b_i \, dV
+\end{array}
+\right]
+\end{multline}
+
+As in the one-field formulation, the lumped mass matrix $M_L$ is obtained
+by summing the row entries and placing the result on the diagonal.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Backward Euler
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Backward Euler}
+
+Backward Euler timestepping yields
+\begin{equation}
+\dot{U}^{n+1} = \frac{U^{n+1} - U^n}{\Delta t}.
+\end{equation}
+Substituting into \eqref{eq:2f_EOM}, we have
+\begin{equation}
+\left(\frac{1}{(\Delta t)} M + K \right) U^{n+1} = 
+F^{n+1} + M \left( \frac{U^n}{(\Delta t)} \right).
+\end{equation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Forward Euler
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Forward Euler}
+
+The simplest explicit method is the forward Euler method.
+We solve the equation
+\begin{equation}
+M\dot{U}^{n+1} = F^n - KU^n,
+\end{equation}
+with the time derivatives approximated as in \eqref{eq:EulerDDt}.
+We shall also replace the consistent mass matrix given in \eqref{eq:1f_matrices}
+with a lumped mass matrix $M_L$ whose off-diagonal entries are zero.
+That is, $M_L$ is a diagonal matrix with positive non-zero entries
+that can be trivially inverted.
+
+The forward Euler method explicitly updates the solution vector of 
+displacements and velocities as
+\begin{equation}
+\label{eq:ForwardEuler}
+U^{n+1} = (\Delta t) \inverse{(M_L)}(F^n - K U^n) + U^n
+\end{equation}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Symplectic Euler
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Symplectic Euler}
+
+Symplectic (or semi-implicit) Euler is a staggered/segregated
+solution algorithm where first the velocity and then the
+displacement are updated, sequentially.  
+
+Ignoring bad notation for a second, we can write the algorithm as:
+\begin{enumerate}
+\item
+\begin{equation}
+V^{n+1} = V^{n} + (\Delta t) \inverse{(M_{22})_L} (F^n - K_{21}U^n),
+\end{equation}
+\item
+\begin{equation}
+U^{n+1} = U^n + (\Delta t) - \inverse{(M_{11})_L} K_{12} V^{n+1}.
+\end{equation}
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Exact solutions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Exact solutions}
