@@ -61,7 +61,9 @@ public:
                     const bool lumped_mass,
                     std::fstream &time_file);
 	~ElasticProblem ();
-	void run (std::string time_integrator, int nx, int ny=-1, int nz=-1);
+	void run_BackwardEuler (std::string time_integrator, int nx, int ny=-1, int nz=-1);
+    void run_ForwardEuler (std::string time_integrator, int nx, int ny=-1, int nz=-1);
+    void run_RK4 (std::string time_integrator, int nx, int ny=-1, int nz=-1);
 	void compute_errors ();
 	std::vector<double> L1_error, L2_error;
     std::vector<std::string> L1_names, L2_names;
@@ -74,7 +76,7 @@ private:
 	void setup_system ();
 	
 	void assemble_implicit_system();
-	void assemble_explicit_system();
+	void assemble_explicit_system(Vector<double> &U);
 	
 	void output_results (const unsigned int cycle, 
 						std::string time_integrator) const;
@@ -103,7 +105,7 @@ private:
     // Vectors for the RHS of the linear system,
     // as well as solutions
     Vector<double> system_rhs;
-    Vector<double> solution, old_solution;
+    Vector<double> solution, old_solution;//, old_velocity;
     
         // Temp vector for doing linear combinations of Vectors
 //    Vector<double> linear_combo;
@@ -168,28 +170,129 @@ void ElasticProblem<dim>::setup_system ()
 	sparsity_pattern.copy_from(c_sparsity);
 	
 	
-	system_matrix.reinit (sparsity_pattern);
-    consistent_mass_matrix.reinit (sparsity_pattern);
-    stiffness_matrix.reinit (sparsity_pattern);
+//	system_matrix.reinit (sparsity_pattern);
+//    consistent_mass_matrix.reinit (sparsity_pattern);
+//    stiffness_matrix.reinit (sparsity_pattern);
     
     system_rhs.reinit(dof_handler.n_dofs());
     
     solution.reinit(dof_handler.n_dofs());
     old_solution.reinit(dof_handler.n_dofs());
+//    old_velocity.reinit(dof_handler.n_dofs());
 //    linear_combo.reinit(dof_handler.n_dofs());
+    
+        // For explicit problems
+    lumped_mass_matrix.reinit(dof_handler.n_dofs());
+//    inverse_lumped_mass_matrix.reinit(dof_handler.n_dofs());
+    
     
     this->n_dofs = dof_handler.n_dofs();
     this->n_cells = triangulation.n_active_cells();
     
 }//setup_system
-
-
+    
 template <int dim>
 void ElasticProblem<dim>::assemble_implicit_system ()
 {
-    // Zero matrices and vectors
+        // Zero matrices and vectors
     consistent_mass_matrix = 0.;
     stiffness_matrix = 0.;
+    
+        // Create an identity tensor:
+    Tensor<2,dim> Id;
+    Id = 0.0;
+    for(int d=0; d<dim; ++d)
+        Id[d][d] = 1;
+    
+    QGauss<dim>  quadrature_formula(std::ceil(((2.0*fe.degree) +1)/2));
+    
+    FEValues<dim> fe_values (fe, quadrature_formula,
+                             update_values   |
+                             update_gradients |
+                             update_quadrature_points |
+                             update_JxW_values);
+    
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   n_q_points    = quadrature_formula.size();
+    
+    FullMatrix<double>   cell_mass (dofs_per_cell, dofs_per_cell);
+    FullMatrix<double>   cell_stiffness (dofs_per_cell, dofs_per_cell);
+    
+    std::vector<unsigned int> local_dof_indices (dofs_per_cell);
+    
+        // Now we can begin with the loop
+        // over all cells:
+    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
+    
+    double l=lambda(dim);
+    double m=mu(dim);
+    
+    double trE;
+    Tensor<2,dim> w_j, E, Stress;
+    
+    for (; cell!=endc; ++cell)
+    {
+        cell_mass = 0;
+        cell_stiffness = 0;
+        
+        fe_values.reinit (cell);
+        
+        for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+        {
+            for (unsigned int i=0; i<dofs_per_cell; ++i)
+            {
+                for (unsigned int j=0; j<dofs_per_cell; ++j)
+                {
+                        // Compute the stress from the shape function:
+                        // Linearized strain tensor:
+                    E = 0.5 * (fe_values[disp].gradient(j,q_point)
+                               + transpose(fe_values[disp].gradient(j,q_point) ) );
+                    
+                    trE = 0.0;
+                    for(int d=0; d<dim; ++d)
+                        trE += E[d][d];
+                    
+                    Stress = Id;
+                    Stress *= (l*trE);
+                    Stress += (2.0*m)*E;
+                    
+                        // Assemble the local matrices
+                    cell_mass(i,j) += rho * fe_values[vel].value(i,q_point) *
+                    fe_values[vel].value(j,q_point) *
+                    fe_values.JxW(q_point);
+                    
+                    cell_mass(i,j) += fe_values[disp].value(i,q_point) *
+                    fe_values[disp].value(j,q_point) *
+                    fe_values.JxW(q_point);
+                    
+                    cell_stiffness(i,j) += scalar_product(fe_values[vel].gradient(i,q_point),
+                                                          Stress) * fe_values.JxW(q_point);
+                    
+                    cell_stiffness(i,j) -= fe_values[disp].value(i,q_point) *
+                    fe_values[vel].value(j,q_point) *
+                    fe_values.JxW(q_point);
+                }//j
+            }//i
+        }//q_point
+        
+        cell->get_dof_indices (local_dof_indices);
+        
+            // Assemble the local matrices into the global system:
+        constraints.distribute_local_to_global(cell_mass, local_dof_indices, consistent_mass_matrix);
+        
+        constraints.distribute_local_to_global(cell_stiffness, local_dof_indices, stiffness_matrix);
+        
+    }//cell
+    
+}//assemble_implicit_system
+
+template <int dim>
+void ElasticProblem<dim>::assemble_explicit_system (Vector<double> &U)
+{
+    // Zero matrices and vectors
+    system_rhs = 0.;
+    lumped_mass_matrix = 0.;
     
         // Create an identity tensor:
     Tensor<2,dim> Id;
@@ -207,9 +310,9 @@ void ElasticProblem<dim>::assemble_implicit_system ()
 
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     const unsigned int   n_q_points    = quadrature_formula.size();
-
-    FullMatrix<double>   cell_mass (dofs_per_cell, dofs_per_cell);
-    FullMatrix<double>   cell_stiffness (dofs_per_cell, dofs_per_cell);
+    
+    Vector<double> cell_lumped_mass(dofs_per_cell);
+    Vector<double> cell_rhs(dofs_per_cell);
 
     std::vector<unsigned int> local_dof_indices (dofs_per_cell);
 
@@ -222,59 +325,69 @@ void ElasticProblem<dim>::assemble_implicit_system ()
     double m=mu(dim);
     
     double trE;
-    Tensor<2,dim> w_j, E, Stress;
-
+    Tensor<2,dim> E, Stress;
+    std::vector<Tensor<2,dim> > grad_u(n_q_points);
+    std::vector<Tensor<1,dim> > velocity(n_q_points);
+    
     for (; cell!=endc; ++cell)
  	{
- 		cell_mass = 0;
-        cell_stiffness = 0;
+ 		cell_lumped_mass = 0;
+        cell_rhs = 0;
  		
  		fe_values.reinit (cell);
- 		
+        
+        fe_values[vel].get_function_values(U, velocity);
+        fe_values[disp].get_function_gradients(U, grad_u);
+
  		for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
  		{
- 			for (unsigned int i=0; i<dofs_per_cell; ++i)
+            for (unsigned int i=0; i<dofs_per_cell; ++i)
  			{
  				for (unsigned int j=0; j<dofs_per_cell; ++j)
  				{
-                        // Compute the stress from the shape function:
-                        // Linearized strain tensor:
-                    E = 0.5 * (fe_values[disp].gradient(j,q_point)
-                               + transpose(fe_values[disp].gradient(j,q_point) ) );
-                    
-                    trE = 0.0;
-                    for(int d=0; d<dim; ++d)
-                        trE += E[d][d];
-
-                    Stress = Id;
-                    Stress *= (l*trE);
-                    Stress += (2.0*m)*E;
-                    
                         // Assemble the local matrices
- 					cell_mass(i,j) += rho * fe_values[vel].value(i,q_point) *
+ 					cell_lumped_mass(i) += rho * fe_values[vel].value(i,q_point) *
                                     fe_values[vel].value(j,q_point) *
                                     fe_values.JxW(q_point);
                     
-                    cell_mass(i,j) += fe_values[disp].value(i,q_point) *
-                                    fe_values[disp].value(j,q_point) *
-                                    fe_values.JxW(q_point);
- 					
- 					cell_stiffness(i,j) += scalar_product(fe_values[vel].gradient(i,q_point),
-                                    Stress) * fe_values.JxW(q_point);
-                    
-                    cell_stiffness(i,j) -= fe_values[disp].value(i,q_point) *
-                                            fe_values[vel].value(j,q_point) *
-                                            fe_values.JxW(q_point);
+                    cell_lumped_mass(i) += fe_values[disp].value(i,q_point) *
+                                        fe_values[disp].value(j,q_point) *
+                                        fe_values.JxW(q_point);
  				}//j
+                
+                
+                    // Assemble cell RHS from stress:
+                // Compute the stress from the shape function:
+                // Linearized strain tensor:
+                E = 0.5*(grad_u[q_point] + transpose(grad_u[q_point]));
+                trE = 0.0;
+                for(int d=0; d<dim; ++d)
+                    trE += E[d][d];
+                
+                Stress = Id;
+                Stress *= (l*trE);
+                Stress += (2.0*m)*E;
+                
+                cell_rhs(i) -= scalar_product(fe_values[vel].gradient(i,q_point), Stress)
+                			* fe_values.JxW(q_point);
+                
+                cell_rhs(i) += fe_values[disp].value(i,q_point)
+                                * velocity[q_point]
+                                * fe_values.JxW(q_point);
  			}//i
  		}//q_point
  		
     cell->get_dof_indices (local_dof_indices);
 
        // Assemble the local matrices into the global system:
-    constraints.distribute_local_to_global(cell_mass, local_dof_indices, consistent_mass_matrix);
-
-    constraints.distribute_local_to_global(cell_stiffness, local_dof_indices, stiffness_matrix);
+    //constraints.distribute_local_to_global(cell_lumped_mass, local_dof_indices, lumped_mass_matrix);
+    //constraints.distribute_local_to_global(cell_rhs, local_dof_indices, system_rhs);
+    
+    for(unsigned int i=0; i<dofs_per_cell; ++i)
+    {
+    	lumped_mass_matrix(local_dof_indices[i]) += cell_lumped_mass[i];
+    	system_rhs(local_dof_indices[i]) += cell_rhs[i];
+    }
  		
  	}//cell
 
@@ -558,11 +671,199 @@ void ElasticProblem<dim>::compute_errors(void)
     
     for(unsigned int i=0; i<L2_error.size(); ++i)
         L2_error[i] = std::sqrt(L2_error[i]);
-    
+	
 }//compute_errors
+    
+template <int dim>
+void ElasticProblem<dim>::run_BackwardEuler (std::string time_integrator, int nx, int ny, int nz)
+{
+    
+    computing_timer.enter_section("Total run time");
+    
+    create_grid(nx, ny, nz);
+    
+    std::cout << "   Number of active cells:       "
+    << triangulation.n_active_cells()
+    << std::endl;
+    
+    computing_timer.enter_section("Setup DOF systems");
+    setup_system ();
+    computing_timer.exit_section();
+    
+    std::cout << "   Number of degrees of freedom: "
+    << dof_handler.n_dofs()
+    << std::endl;
+    
+        // Set time stepping parameters:
+    
+        //output_results(0, time_integrator);
+    
+    double final_time = dim == 1 ? 1.0 : 0.5;
+    
+        // Mesh size:
+    double h = 1./double(nx);
+    
+        // Set time step size based on a constant CFL:
+    double cfl = 0.25;
+    double delta_t = cfl*h/cd(dim);
+    double inv_dt = 1./delta_t;
+    unsigned int n_timesteps = final_time / delta_t;
+    
+    std::cout << "\n Wave speed:      cd = " << cd(dim);
+    std::cout << "\n Mesh size:       h  = " << h;
+    std::cout << "\n Time step size:  dt = " << delta_t;
+    std::cout << "\n Number of steps: N  = " << n_timesteps;
+    std::cout << std::endl;
+    
+        // Now actually do the work:
+    current_time = 0.;
+    
+        // Set Initial Conditions
+    VectorTools::interpolate(dof_handler,
+                             ExactSolution<dim>(2*dim, current_time),
+                             solution);
+    
+    constraints.distribute (solution);
+    
+    for(unsigned int step=0; step<n_timesteps; ++step)
+    {
+        current_time += delta_t;
+        
+            // Set old solution from the current
+        old_solution = solution;
+        solution = 0.;
+        
+        computing_timer.enter_section("Assemble matrices");
+        assemble_implicit_system();
+        computing_timer.exit_section();
+        
+        computing_timer.enter_section("Compute RHS");
+        
+        consistent_mass_matrix.vmult(system_rhs, old_solution);
+        system_rhs *= inv_dt;
+        
+        system_matrix = 0.;
+        system_matrix.add(inv_dt,consistent_mass_matrix);
+        system_matrix.add(1.0,stiffness_matrix);
+        computing_timer.exit_section();//Compute RHS
+        
+        computing_timer.enter_section("Linear solve");
+        SparseDirectUMFPACK directSolver;
+        directSolver.initialize (system_matrix);
+        directSolver.vmult (solution, system_rhs);
+        
+        constraints.distribute (solution);
+        computing_timer.exit_section();//Linear solve
+    }
+    
+        // Total run time section
+    computing_timer.exit_section();
+    
+    compute_errors();
+    
+    computing_timer.print_summary();	
+        // Output the results
+        //output_results (n_timesteps, time_integrator);
+    
+}//BackwardEuler
+    
+template <int dim>
+void ElasticProblem<dim>::run_ForwardEuler (std::string time_integrator, int nx, int ny, int nz)
+{
+    
+    computing_timer.enter_section("Total run time");
+    
+    create_grid(nx, ny, nz);
+    
+    std::cout << "   Number of active cells:       "
+    << triangulation.n_active_cells()
+    << std::endl;
+    
+    computing_timer.enter_section("Setup DOF systems");
+    setup_system ();
+    computing_timer.exit_section();
+    
+    std::cout << "   Number of degrees of freedom: "
+    << dof_handler.n_dofs()
+    << std::endl;
+    
+        // Set time stepping parameters:
+    
+        //output_results(0, time_integrator);
+    
+    double final_time = dim == 1 ? 1.0 : 0.5;
+    
+        // Mesh size:
+    double h = 1./double(nx);
+    
+        // Set time step size based on a constant CFL:
+    double cfl = 0.01;
+    double delta_t = cfl*h/cd(dim);
+    double inv_dt = 1./delta_t;
+    unsigned int n_timesteps = final_time / delta_t;
+    
+    std::cout << "\n Wave speed:      cd = " << cd(dim);
+    std::cout << "\n Mesh size:       h  = " << h;
+    std::cout << "\n Time step size:  dt = " << delta_t;
+    std::cout << "\n Number of steps: N  = " << n_timesteps;
+    std::cout << std::endl;
+    
+        // Now actually do the work:
+    current_time = 0.;
+    
+        // Set Initial Conditions
+    VectorTools::interpolate(dof_handler,
+                             ExactSolution<dim>(2*dim, current_time),
+                             solution);
+    
+    constraints.distribute(solution);
+    
+    for(unsigned int step=0; step<n_timesteps; ++step)
+    {
+        current_time += delta_t;
+        
+            // Set old solution from the current
+        old_solution = solution;
+        solution = 0.;
+        
+        computing_timer.enter_section("Assemble matrices");
+        assemble_explicit_system(old_solution);
+        computing_timer.exit_section();
+        
+            //        computing_timer.enter_section("Compute RHS");
+        
+            //        computing_timer.exit_section();//Compute RHS
+        
+        computing_timer.enter_section("Linear solve");
+        
+        system_rhs *= delta_t;
+        
+        for(unsigned int dof=0; dof<dof_handler.n_dofs(); ++dof)
+        {
+            solution[dof] = system_rhs[dof]/lumped_mass_matrix[dof];
+        }
+        
+        solution += old_solution;
+        
+        constraints.distribute (solution);
+        computing_timer.exit_section();//Linear solve
+    }
+    
+        // Total run time section
+    computing_timer.exit_section();
+    
+        // Compute and output the errors:
+    compute_errors();
+    
+    computing_timer.print_summary();
+    
+        // Output the results
+        //	output_results (n_timesteps, time_integrator);
+    
+}//ForwardEuler
 
 template <int dim>
-void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int nz)
+void ElasticProblem<dim>::run_RK4 (std::string time_integrator, int nx, int ny, int nz)
 {
     
     computing_timer.enter_section("Total run time");
@@ -591,7 +892,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.25;
+    double cfl = 0.01;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
@@ -609,61 +910,129 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
 	VectorTools::interpolate(dof_handler,
                              ExactSolution<dim>(2*dim, current_time),
                              solution);
+                             
+    constraints.distribute(solution);
     
-    constraints.distribute (solution);
+        // Allocate some vectors necessary for RK methods:
+    const unsigned int n_stages = 4;
+    Vector<double> u_i(n_dofs);
+    std::vector<Vector<double> > k_i(n_stages);
+    
+    for(unsigned int i=0; i<n_stages; ++i)
+    {
+        k_i[i].reinit(n_dofs);
+    }
     
     for(unsigned int step=0; step<n_timesteps; ++step)
     {
-        current_time += delta_t;
-        
         // Set old solution from the current
         old_solution = solution;
-        solution = 0.;
         
+            // Stage 1:
         computing_timer.enter_section("Assemble matrices");
-        assemble_implicit_system();
+        assemble_explicit_system(old_solution);
         computing_timer.exit_section();
         
-        computing_timer.enter_section("Compute RHS");
-
-        consistent_mass_matrix.vmult(system_rhs, old_solution);
-        system_rhs *= inv_dt;
+        computing_timer.enter_section("Linear solve");
         
-        system_matrix = 0.;
-        system_matrix.add(inv_dt,consistent_mass_matrix);
-        system_matrix.add(1.0,stiffness_matrix);
-        computing_timer.exit_section();//Compute RHS
+        for(unsigned int dof=0; dof<dof_handler.n_dofs(); ++dof)
+        {
+            k_i[0][dof] = system_rhs[dof]/lumped_mass_matrix[dof];
+        }
+        
+        computing_timer.exit_section();//Linear solve
+        
+            // Stage 2:
+        current_time += delta_t/2.;
+        
+        u_i = old_solution;
+        u_i.add(delta_t/2., k_i[0]);
+        constraints.distribute (u_i);
+        
+        computing_timer.enter_section("Assemble matrices");
+        assemble_explicit_system(u_i);
+        computing_timer.exit_section();
         
         computing_timer.enter_section("Linear solve");
-        SparseDirectUMFPACK directSolver;
-        directSolver.initialize (system_matrix);
-        directSolver.vmult (solution, system_rhs);
+        
+        for(unsigned int dof=0; dof<dof_handler.n_dofs(); ++dof)
+        {
+            k_i[1][dof] = system_rhs[dof]/lumped_mass_matrix[dof];
+        }
+        
+        computing_timer.exit_section();//Linear solve
+        
+            // Stage 3:
+        u_i = old_solution;
+        u_i.add(delta_t/2., k_i[1]);
+        constraints.distribute (u_i);
+        
+        computing_timer.enter_section("Assemble matrices");
+        assemble_explicit_system(u_i);
+        computing_timer.exit_section();
+        
+        computing_timer.enter_section("Linear solve");
+        
+        for(unsigned int dof=0; dof<dof_handler.n_dofs(); ++dof)
+        {
+            k_i[2][dof] = system_rhs[dof]/lumped_mass_matrix[dof];
+        }
+        
+        computing_timer.exit_section();//Linear solve
+        
+            // Stage 4:
+        current_time += delta_t/2.;
+        
+        u_i = old_solution;
+        u_i.add(delta_t, k_i[2]);
+        constraints.distribute (u_i);
+        
+        computing_timer.enter_section("Assemble matrices");
+        assemble_explicit_system(u_i);
+        computing_timer.exit_section();
+        
+        computing_timer.enter_section("Linear solve");
+        
+        for(unsigned int dof=0; dof<dof_handler.n_dofs(); ++dof)
+        {
+            k_i[3][dof] = system_rhs[dof]/lumped_mass_matrix[dof];
+        }
+        
+        computing_timer.exit_section();//Linear solve
+        
+        
+        solution = old_solution;
+        solution.add(delta_t/6., k_i[0]);
+        solution.add(delta_t/3., k_i[1]);
+        solution.add(delta_t/3., k_i[2]);
+        solution.add(delta_t/6., k_i[3]);
         
         constraints.distribute (solution);
-        computing_timer.exit_section();//Linear solve
     }
     
         // Total run time section
     computing_timer.exit_section();
-   
+    
+        // Compute and output the errors:
     compute_errors();
-
-    computing_timer.print_summary();	
-        // Output the results
-	//output_results (n_timesteps, time_integrator);
+    
+    computing_timer.print_summary();
 	
-}
+        // Output the results
+//	output_results (n_timesteps, time_integrator);
+	
+}//RK4
     
 }//namespace
 
 /***********************************
  * MAIN
  ***********************************/
-int main ()
+int main (int argc, char* argv[])
 {
     try
     {
-        // Parse input:
+            // Parse input:
         std::string prm_file_name;
         
         if(argc < 2)
@@ -677,11 +1046,11 @@ int main ()
             prm_file_name = argv[1];
         }
         
-        // Open the file:
+            // Open the file:
         std::fstream input_stream;
         input_stream.open(prm_file_name.c_str(), std::ios::in);
         
-        // Read the data:
+            // Read the data:
         std::vector<std::string> input_strings(4);
         std::vector<int>         input_integers(4);
         
@@ -691,16 +1060,16 @@ int main ()
             input_stream >> input_integers[i];
         }
         
-        // Close the file:
+            // Close the file:
         input_stream.close();
         
         
-        //        for(int i=0; i<4; ++i)
-        //        {
-        //            std::cout<<"\n"<< input_strings[i];
-        //            std::cout<<"\n"<< input_integers[i]<<std::endl;
-        //        }
-        //        getchar();
+            //        for(int i=0; i<4; ++i)
+            //        {
+            //            std::cout<<"\n"<< input_strings[i];
+            //            std::cout<<"\n"<< input_integers[i]<<std::endl;
+            //        }
+            //        getchar();
         
         const unsigned int scheme = input_integers[0];
         const unsigned int dim = input_integers[1];
@@ -708,19 +1077,12 @@ int main ()
         const unsigned int h = input_integers[3];
         
         
-        // Strings for output
+            // Strings for output
         std::vector<std::string> time_integrator(10);
         
-        time_integrator[0] = "AvgAccel";
-        time_integrator[1] = "BackwardEuler";
-        time_integrator[2] = "Bathe";
-        time_integrator[3] = "CDF";
-        time_integrator[4] = "ExpGenAlpha";
-        time_integrator[5] = "ForwardEuler";
-        time_integrator[6] = "GenAlpha";
-        time_integrator[7] = "HHT";
-        time_integrator[8] = "LinAccel";
-        time_integrator[9] = "WBZ";
+        time_integrator[0] = "BackwardEuler";
+        time_integrator[1] = "ForwardEuler";
+        time_integrator[2] = "RK4";
         
         std::string sh = dealii::Utilities::int_to_string(h,4);
         std::string sp = dealii::Utilities::int_to_string(p,4);
@@ -731,10 +1093,10 @@ int main ()
         std::fstream timing_stream;
         timing_stream.open(fileName.c_str(), std::ios::out);
         
-        // To access the data for output
+            // To access the data for output
         unsigned int n_dofs, n_cells;
         
-        // Giant hack!
+            // Giant hack!
         if(dim==1)
         {
             ContinuousGalerkin::ElasticProblem<1> ed_problem(p, false, timing_stream);
@@ -742,34 +1104,13 @@ int main ()
             switch(scheme)
             {
                 case 0:
-                    ed_problem.run_AvgAccel(time_integrator[scheme], h);
-                    break;
-                case 1:
                     ed_problem.run_BackwardEuler(time_integrator[scheme], h);
                     break;
-                case 2:
-                    ed_problem.run_Bathe(time_integrator[scheme], h);
-                    break;
-                case 3:
-                    ed_problem.run_CDF(time_integrator[scheme], h);
-                    break;
-                case 4:
-                    ed_problem.run_ExpGenAlpha(time_integrator[scheme], h);
-                    break;
-                case 5:
+                case 1:
                     ed_problem.run_ForwardEuler(time_integrator[scheme], h);
                     break;
-                case 6:
-                    ed_problem.run_GenAlpha(time_integrator[scheme], h);
-                    break;
-                case 7:
-                    ed_problem.run_HHT(time_integrator[scheme], h);
-                    break;
-                case 8:
-                    ed_problem.run_LinAccel(time_integrator[scheme], h);
-                    break;
-                case 9:
-                    ed_problem.run_WBZ(time_integrator[scheme], h);
+                case 2:
+                    ed_problem.run_RK4(time_integrator[scheme], h);
                     break;
                 default:
                     break;
@@ -782,13 +1123,13 @@ int main ()
             timing_stream.close();
             
             {
-                // Dump to a file:
-                // polynomial order
-                // nx
-                // cells
-                // dofs
-                // L1 errors
-                // L2 errors
+                    // Dump to a file:
+                    // polynomial order
+                    // nx
+                    // cells
+                    // dofs
+                    // L1 errors
+                    // L2 errors
                 std::string fileName = "./" + time_integrator[scheme] + "Errors_d1_p"
                 + sp + "_h" + sh + ".dat";
                 std::fstream fp;
@@ -817,38 +1158,16 @@ int main ()
             switch(scheme)
             {
                 case 0:
-                    ed_problem.run_AvgAccel(time_integrator[scheme], h,h);
+                    ed_problem.run_BackwardEuler(time_integrator[scheme], h);
                     break;
                 case 1:
-                    ed_problem.run_BackwardEuler(time_integrator[scheme], h,h);
+                    ed_problem.run_ForwardEuler(time_integrator[scheme], h);
                     break;
                 case 2:
-                    ed_problem.run_Bathe(time_integrator[scheme], h,h);
-                    break;
-                case 3:
-                    ed_problem.run_CDF(time_integrator[scheme], h,h);
-                    break;
-                case 4:
-                    ed_problem.run_ExpGenAlpha(time_integrator[scheme], h,h);
-                    break;
-                case 5:
-                    ed_problem.run_ForwardEuler(time_integrator[scheme], h,h);
-                    break;
-                case 6:
-                    ed_problem.run_GenAlpha(time_integrator[scheme], h,h);
-                    break;
-                case 7:
-                    ed_problem.run_HHT(time_integrator[scheme], h,h);
-                    break;
-                case 8:
-                    ed_problem.run_LinAccel(time_integrator[scheme], h,h);
-                    break;
-                case 9:
-                    ed_problem.run_WBZ(time_integrator[scheme], h,h);
+                    ed_problem.run_RK4(time_integrator[scheme], h);
                     break;
                 default:
                     break;
-                    
             }
             
             n_cells = ed_problem.n_cells;
@@ -857,13 +1176,13 @@ int main ()
             timing_stream.close();
             
             {
-                // Dump to a file:
-                // polynomial order
-                // nx
-                // cells
-                // dofs
-                // L1 errors
-                // L2 errors
+                    // Dump to a file:
+                    // polynomial order
+                    // nx
+                    // cells
+                    // dofs
+                    // L1 errors
+                    // L2 errors
                 std::string fileName = "./" + time_integrator[scheme] + "Errors_d1_p"
                 + sp + "_h" + sh + ".dat";
                 std::fstream fp;
@@ -889,7 +1208,8 @@ int main ()
             std::cout<<"\n dim=3 not tested!"<<std::endl;
             exit(1);
         }
-        
+
+
     }
     catch (std::exception &exc)
     {
