@@ -133,7 +133,7 @@ dof_handler (triangulation),
 fe (FE_Q<dim>(poly_order), 2*dim),
 computing_timer(time_file, TimerOutput::summary, TimerOutput::cpu_and_wall_times),
 disp(0),
-vel(1)
+vel(dim)
 {}
 
 template <int dim>
