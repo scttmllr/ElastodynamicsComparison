@@ -271,7 +271,7 @@ void ElasticProblem<dim>::assemble_explicit_system ()
                 Stress *= (l*trE);
                 Stress += (2.0*m)*E;
                 
-                cell_rhs(i) -= scalar_product(fe_values[disp].gradient(i,q_point), Stress) 
+                cell_rhs(i) -= scalar_product(fe_values[vel].gradient(i,q_point), Stress)
                 			* fe_values.JxW(q_point);
                 
                 cell_rhs(i) += fe_values[disp].value(i,q_point)
