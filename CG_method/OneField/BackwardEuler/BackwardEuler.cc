@@ -581,8 +581,10 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.25;
+    double cfl = 0.025;
     double delta_t = cfl*h/cd(dim);
+    
+    delta_t =0.0005;
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;
     
@@ -795,6 +797,7 @@ int main ()
             // dim = 2
             // Copy from above and change the template parameter on the ed_problem<dim>
             // Note that the k-loop should not go through 9, maybe 7?
+        if(false)
         for(int j=0; j<np; ++j)
         {
                 // Create a convergence table

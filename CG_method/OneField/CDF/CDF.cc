@@ -594,7 +594,7 @@ void ElasticProblem<dim>::run (std::string time_integrator, int nx, int ny, int 
     double h = 1./double(nx);
     
         // Set time step size based on a constant CFL:
-    double cfl = 0.1;
+    double cfl = 0.001;
     double delta_t = cfl*h/cd(dim);
     double inv_dt = 1./delta_t;
     unsigned int n_timesteps = final_time / delta_t;

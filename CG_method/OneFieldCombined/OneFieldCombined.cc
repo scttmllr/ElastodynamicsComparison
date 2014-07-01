@@ -2096,7 +2096,7 @@ int main (int argc, char* argv[])
         std::string sp = dealii::Utilities::int_to_string(p,4);
         std::string sd = dealii::Utilities::int_to_string(dim,4);
 
-    std::string fileName = "./" + time_integrator[scheme] + "_Timing_d1_p" + sp + "_h" + sh + ".dat";
+    std::string fileName = "./" + time_integrator[scheme] + "_Timing_d" + sd + "_p" + sp + "_h" + sh + ".dat";
         
     std::fstream timing_stream;
     timing_stream.open(fileName.c_str(), std::ios::out);
@@ -2159,7 +2159,7 @@ int main (int argc, char* argv[])
                     // dofs
                     // L1 errors
                     // L2 errors
-                std::string fileName = "./" + time_integrator[scheme] + "Errors_d1_p"
+                std::string fileName = "./" + time_integrator[scheme] + "Errors_d"+sd+"1_p"
                 + sp + "_h" + sh + ".dat";
                 std::fstream fp;
                 fp.open(fileName.c_str(), std::ios::out);
@@ -2234,7 +2234,7 @@ int main (int argc, char* argv[])
                     // dofs
                     // L1 errors
                     // L2 errors
-                std::string fileName = "./" + time_integrator[scheme] + "Errors_d1_p"
+                std::string fileName = "./" + time_integrator[scheme] + "Errors_d"+sd+"1_p"
                 + sp + "_h" + sh + ".dat";
                 std::fstream fp;
                 fp.open(fileName.c_str(), std::ios::out);
